@@ -1,3 +1,4 @@
+// File: app/dashboard/bar/components/CreateInventoryItemModal.tsx
 "use client";
 
 import {
@@ -11,7 +12,8 @@ import {
   Group,
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
-import { InventoryItem, SmallestUnit } from "@prisma/client";
+// --- FIX: Import UnitOfMeasure instead of SmallestUnit ---
+import { InventoryItem, UnitOfMeasure } from "@prisma/client";
 import { useState } from "react";
 import { ApiResponse } from "@/lib/types";
 import { notifications } from "@mantine/notifications";
@@ -33,24 +35,35 @@ export function CreateInventoryItemModal({
     initialValues: {
       name: "",
       storageUnitName: "",
-      smallestUnit: SmallestUnit.unit,
+      // --- FIX: Use UnitOfMeasure ---
+      smallestUnit: UnitOfMeasure.unit, // Default to 'unit'
       storageUnitSize: 1,
       reorderThreshold: 0,
     },
     validate: {
       name: (val) => (val.trim().length < 2 ? "Nome inválido" : null),
-      storageUnitName: (val) => (val.trim().length < 2 ? "Nome inválido" : null),
-      storageUnitSize: (val) => (val <= 0 ? "Tamanho deve ser positivo" : null),
+      storageUnitName: (val) => (val.trim().length < 2 ? "Nome inválido (opcional, mas se preenchido deve ser válido)" : null), // Adjusted validation slightly
+      storageUnitSize: (val) => (val === null || val === undefined || Number(val) <= 0 ? "Tamanho deve ser positivo" : null), // Added null/undefined check
+      // --- FIX: Add validation for smallestUnit ---
+      smallestUnit: (val) => (Object.values(UnitOfMeasure).includes(val) ? null : "Unidade inválida"),
+      reorderThreshold: (val) => (val === null || val === undefined || Number(val) < 0 ? "Nível de alerta não pode ser negativo" : null), // Allow 0
     },
   });
 
   const handleSubmit = async (values: typeof form.values) => {
     setLoading(true);
     try {
-      const response = await fetch("/api/inventory", {
-        method: "POST", // POST to /api/inventory will create an item
+        // Prepare payload, ensuring numbers are correctly formatted
+        const payload = {
+            ...values,
+            storageUnitSize: Number(values.storageUnitSize) || 1, // Ensure it's a number, default 1
+            reorderThreshold: Number(values.reorderThreshold) ?? null, // Ensure number or null
+        };
+
+      const response = await fetch("/api/inventory", { // This POST hits the inventory item creation endpoint
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(values),
+        body: JSON.stringify(payload), // Send validated payload
       });
 
       const result: ApiResponse<InventoryItem> = await response.json();
@@ -61,7 +74,8 @@ export function CreateInventoryItemModal({
         message: `Item "${values.name}" definido.`,
         color: "green",
       });
-      onSuccess();
+      onSuccess(); // Closes modal and refreshes parent data
+      form.reset(); // Reset form on success
     } catch (error: any) {
       notifications.show({
         title: "Erro",
@@ -72,6 +86,14 @@ export function CreateInventoryItemModal({
       setLoading(false);
     }
   };
+
+   // Reset form when modal is closed
+   useEffect(() => {
+       if (!opened) {
+           form.reset();
+       }
+   // eslint-disable-next-line react-hooks/exhaustive-deps
+   }, [opened]);
 
   return (
     <Modal
@@ -87,41 +109,46 @@ export function CreateInventoryItemModal({
           <TextInput
             required
             label="Nome do Item"
-            placeholder="Ex: Johnnie Walker Black"
+            placeholder="Ex: Café em Grãos Acaia, Vodka Absolut"
             {...form.getInputProps("name")}
           />
           <TextInput
-            required
-            label="Unidade de Armazenagem"
-            placeholder="Ex: Garrafa 750ml, Lata 350ml, Unidade"
+            // Removed required, make it optional as per schema
+            label="Unidade de Armazenagem / Compra (Opcional)"
+            placeholder="Ex: Saco 1kg, Garrafa 750ml, Lata 350ml, Unidade"
             {...form.getInputProps("storageUnitName")}
           />
           <Group grow>
             <Select
               required
-              label="Menor Unidade de Venda"
-              data={Object.values(SmallestUnit).map((unit) => ({
-                label: unit,
+              label="Menor Unidade de Medida/Venda"
+              // --- FIX: Use UnitOfMeasure ---
+              data={Object.values(UnitOfMeasure).map((unit) => ({
+                label: unit, // Use enum value directly for label and value
                 value: unit,
               }))}
               {...form.getInputProps("smallestUnit")}
             />
             <NumberInput
               required
-              label="Tamanho (em Menor Unidade)"
-              description="Ex: 750 (para ml), 1 (para unidade)"
-              min={1}
+              label="Tamanho da Unid. Armazenagem (em Menor Unidade)"
+              description={`Quantos ${form.values.smallestUnit} cabem na Unid. Armazenagem? Ex: 1000 (para 1kg em gramas), 750 (para garrafa em ml), 1 (para unidade)`}
+              min={0.01} // Cannot be zero or less
+              step={1} // Default step
+              decimalScale={2} // Allow decimals if needed (e.g., 0.5 doses?)
               {...form.getInputProps("storageUnitSize")}
             />
           </Group>
           <NumberInput
-            label="Nível de Alerta de Estoque"
-            description="Mostrar alerta quando estoque for <= a este número"
+            label="Nível de Alerta de Estoque (Opcional)"
+            description={`Mostrar alerta quando estoque (em ${form.values.smallestUnit}) for <= a este número`}
             min={0}
+            step={1}
+            allowDecimal={false} // Usually whole units for threshold
             {...form.getInputProps("reorderThreshold")}
           />
 
-          <Button type="submit" mt="md" color="privacyGold" loading={loading}>
+          <Button type="submit" mt="md" color="pastelGreen" loading={loading}>
             Salvar Item
           </Button>
         </Stack>

@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { ApiResponse } from "@/lib/types";
 import { NextRequest, NextResponse } from "next/server";
-import { Prisma, Sale, StaffRole, ClientStatus, Visit, Client, SeatingArea, StockMovementType, Product, InventoryItem } from "@prisma/client"; // Added Client, SeatingArea, StockMovementType, Product, InventoryItem
+import { Prisma, Sale, StaffRole, ClientStatus, Visit, Client, SeatingArea, StockMovementType, Product, InventoryItem } from "@prisma/client";
 
 // Define expected payload shape directly
 interface AcaiaSalePayload {
@@ -66,19 +66,17 @@ export async function POST(req: NextRequest) {
         }
 
         // --- 1. Find or Create Visit ---
-        // Use a more specific type that includes the relations we query for
         let visit: VisitWithRelations | null = await prisma.visit.findFirst({
             where: {
                 seatingAreaId: seatingAreaId,
-                exitTime: null, // Active visit
+                exitTime: null,
             },
-            include: { client: true, seatingArea: true } // Include client and seatingArea
+            include: { client: true, seatingArea: true }
         });
 
         let clientId: number;
 
         if (!visit) {
-            // No active visit found, create an anonymous client and a new visit
             const anonClient = await prisma.client.create({
                 data: {
                     name: `Patrono #${Date.now().toString().slice(-6)}`,
@@ -89,7 +87,6 @@ export async function POST(req: NextRequest) {
             });
             clientId = anonClient.id;
 
-            // Create the visit
             const createdVisit = await prisma.visit.create({
                 data: {
                     clientId: clientId,
@@ -99,25 +96,22 @@ export async function POST(req: NextRequest) {
                     consumableCreditRemaining: 0,
                 }
             });
-            // Re-fetch visit WITH relations to ensure 'visit' variable has the correct type
             visit = await prisma.visit.findUnique({
                  where: { id: createdVisit.id },
-                 include: { client: true, seatingArea: true } // Include necessary relations
+                 include: { client: true, seatingArea: true }
             });
             if (!visit) throw new Error("Falha ao buscar a visita recém-criada associada à mesa.");
 
         } else {
-             // Use existing visit's client ID, ensuring it exists
              if (!visit.clientId) {
                    const anonClient = await prisma.client.create({
                        data: { name: `Patrono #${Date.now().toString().slice(-6)}`, status: ClientStatus.new, crmData: defaultCrmData }
                    });
                    clientId = anonClient.id;
-                   // Update and re-fetch visit WITH relations
                    visit = await prisma.visit.update({
                        where: { id: visit.id },
                        data: { clientId: clientId },
-                       include: { client: true, seatingArea: true } // Include relations
+                       include: { client: true, seatingArea: true }
                    });
                    if (!visit) throw new Error("Falha ao associar cliente anônimo a visita existente.");
 
@@ -126,12 +120,9 @@ export async function POST(req: NextRequest) {
              }
         }
 
-        // --- FIX: Moved the check here, after 'visit' is guaranteed to be assigned ---
-        // Ensure client relation exists on the final visit object
-        if (!visit?.client) { // Added null check for visit itself just in case
+        if (!visit?.client) {
              throw new Error("Cliente associado à visita não encontrado.");
         }
-        // --- End Fix ---
 
         // --- 2. Get Product Data ---
         const products = await prisma.product.findMany({
@@ -183,8 +174,12 @@ export async function POST(req: NextRequest) {
                 where: { id: clientId },
                 data: {
                     lifetimeSpend: { increment: totalSaleAmount },
-                    lastVisitSpend: totalSaleAmount,
+                    // --- FIX: Removed lastVisitSpend ---
+                    // lastVisitSpend: totalSaleAmount,
                     lastVisitDate: new Date(),
+                    // Update totalVisits? - Needs careful consideration if a visit spans multiple transactions
+                    // Maybe increment totalVisits when the VISIT is created instead?
+                    // For now, only update spend and date.
                 },
             }),
             prisma.staffCommission.create({

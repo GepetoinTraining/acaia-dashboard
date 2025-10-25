@@ -1,19 +1,22 @@
 // File: app/dashboard/components/LiveMap.tsx (Simplified for Acaia MVP)
 "use client";
 
-import { SimpleGrid, Paper, Title, Stack, Text, Group } from "@mantine/core";
+import { SimpleGrid, Paper, Title, Stack, Text, Group, Badge } from "@mantine/core";
 import { LiveClient } from "@/lib/types"; // Removed LiveHostess
 import { LiveClientCard } from "./LiveClientCard"; // Removed LiveHostessCard import
-import { SeatingArea } from "@prisma/client"; // Import SeatingArea if showing tables
+// --- FIX: Add SeatingArea, Visit, Client imports ---
+import { SeatingArea, Visit, Client } from "@prisma/client";
 
 // Define the shape of the data coming from the API (including the nested visit info)
+// This type is used locally if needed, but the main data comes via props
 type SeatingAreaWithVisit = SeatingArea & {
+  // --- FIX: Ensure Visit and Client types are available ---
   visits: (Visit & { client: Client | null })[];
 };
 
 type LiveMapProps = {
-  // Pass active visits/clients, maybe areas too
-  activeVisits: LiveClient[]; // Using the simplified LiveClient type
+  // Pass active visits/clients
+  activeVisits: LiveClient[];
   // seatingAreas?: SeatingAreaWithVisit[]; // Optional: Pass areas to show occupancy map
 };
 
@@ -25,13 +28,17 @@ export function LiveMap({ activeVisits }: LiveMapProps) {
   const unassignedVisits: LiveClient[] = [];
 
   activeVisits.forEach(visit => {
-      if (visit.seatingAreaId) {
+      // Use optional chaining for safety
+      if (visit?.seatingAreaId) {
           if (!visitsByArea[visit.seatingAreaId]) {
               visitsByArea[visit.seatingAreaId] = [];
           }
           visitsByArea[visit.seatingAreaId].push(visit);
       } else {
-          unassignedVisits.push(visit);
+          // Add null/undefined check for visit itself
+          if (visit) {
+              unassignedVisits.push(visit);
+          }
       }
   });
 
@@ -45,21 +52,25 @@ export function LiveMap({ activeVisits }: LiveMapProps) {
       <Stack>
         {activeVisits.length > 0 ? (
           activeVisits.map((client) => (
-            // LiveClientCard might need adjustment if credit was removed from LiveClient type
-            <Paper key={client.visitId} p="xs" withBorder radius="sm">
-                <Group justify="space-between">
-                    <Text size="sm" fw={500}>{client.name || `Visita #${client.visitId}`}</Text>
-                    {client.seatingAreaName && <Badge size="sm">{client.seatingAreaName}</Badge>}
-                </Group>
-            </Paper>
-            // Replace above Paper with updated LiveClientCard if preferred
-            // <LiveClientCard key={client.visitId} client={client} />
+            // Use LiveClientCard component
+            <LiveClientCard key={client.visitId} client={client} />
           ))
         ) : (
           <Text c="dimmed">Nenhum cliente na casa.</Text>
         )}
       </Stack>
       {/* Add logic here to display occupied tables based on visitsByArea if needed */}
+       {/* Example of showing unassigned clients if any */}
+       {unassignedVisits.length > 0 && (
+           <>
+                <Title order={5} mt="md">Clientes Aguardando Mesa ({unassignedVisits.length})</Title>
+                <Stack mt="xs">
+                    {unassignedVisits.map(client => (
+                        <LiveClientCard key={client.visitId} client={client} />
+                    ))}
+                </Stack>
+           </>
+       )}
     </Paper>
 
     // Removed the second column for Hostesses

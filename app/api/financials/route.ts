@@ -1,21 +1,23 @@
+// File: app/api/financials/route.ts
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-import { ApiResponse, FinancialsData, HostessPayoutSummary } from "@/lib/types"; // Changed HostessPayout to HostessPayoutSummary
+// Removed HostessPayoutSummary as it's not used and Hostess feature removed
+import { ApiResponse, FinancialsData } from "@/lib/types";
 import { NextRequest, NextResponse } from "next/server";
 import { StaffRole } from "@prisma/client";
 
 /**
- * GET /api/financials
- * Fetches all unpaid commissions and payouts.
- * This is an ADMIN-only route.
+ * GET /api/financials (Simplified for Acaia MVP)
+ * Fetches only unpaid staff commissions.
+ * ADMIN-only route.
  */
 export async function GET(req: NextRequest) {
   const session = await getSession();
-  // This must be an admin/owner
-  if (!session.staff?.isLoggedIn || session.staff.pin !== "1234") {
+  // Rely solely on Admin role for access
+  if (!session.staff?.isLoggedIn || session.staff.role !== StaffRole.Admin) {
     return NextResponse.json<ApiResponse>(
-      { success: false, error: "Não autorizado" },
-      { status: 401 }
+      { success: false, error: "Não autorizado (Admin required)" },
+      { status: 403 } // Forbidden is more appropriate than Unauthorized
     );
   }
 
@@ -24,66 +26,37 @@ export async function GET(req: NextRequest) {
     const staffCommissions = await prisma.staffCommission.findMany({
       where: { isPaidOut: false },
       include: {
-        staff: true,
-        relatedSale: true,
-        relatedClient: true,
+        staff: { select: { name: true } }, // Select only needed staff fields
+        relatedSale: true, // Keep for context if needed
+        relatedClient: { select: { name: true } }, // Keep for context if needed
       },
       orderBy: { createdAt: "asc" },
     });
 
-    // 2. Get Unpaid Partner Payouts
-    const partnerPayouts = await prisma.partnerPayout.findMany({
-      where: { isPaidOut: false },
-      include: {
-        partner: true,
-        sale: {
-          include: {
-            product: true,
-          },
-        },
-      },
-      orderBy: { createdAt: "asc" },
-    });
-    
-    // 3. Get Hostess Commission Summary
-    // This is a summary, not a payout ledger, as we haven't built the
-    // "close shift" logic yet. We assume all sales are "unpaid" for now.
-    const hostCommissions = await prisma.sale.groupBy({
-      by: ["hostId"],
-      _sum: {
-        commissionEarned: true,
-      },
-      // TODO: Add a filter for `hostessPayoutId: null` once we add that
-    });
-    
-    const hosts = await prisma.host.findMany({
-      where: { id: { in: hostCommissions.map(h => h.hostId) }}
-    });
-    
-    // FIX 1: Renamed variable to `hostessPayoutData` to avoid conflict with `HostessPayout` type
-    const hostessPayoutData: HostessPayoutSummary[] = hostCommissions.map(hc => { // Changed HostessPayout to HostessPayoutSummary
-      const host = hosts.find(h => h.id === hc.hostId);
-      return {
-        hostId: hc.hostId,
-        stageName: host?.stageName || 'Host Deletada',
-        // Step 1: Keep this as a number/Decimal for now
-        totalUnpaidCommissions: hc._sum.commissionEarned || 0,
-      }
-    })
-    // Step 2: Filter using the number/Decimal
-    .filter(h => Number(h.totalUnpaidCommissions) > 0) // <-- FIX IS HERE
-    // Step 3: Now map the filtered results to convert to a string
-    .map(h => ({
-      ...h,
-      totalUnpaidCommissions: h.totalUnpaidCommissions.toString(),
+    // 2. Partner Payouts REMOVED
+    // const partnerPayouts = await prisma.partnerPayout.findMany({ ... });
+
+    // 3. Hostess Commission Summary REMOVED
+    // const hostCommissions = await prisma.sale.groupBy({ ... });
+
+    // Serialize Decimal fields in staffCommissions before sending
+    const serializedStaffCommissions = staffCommissions.map(commission => ({
+        ...commission,
+        amountEarned: Number(commission.amountEarned), // Convert Decimal to number
+        // Serialize nested Decimals if relatedSale is included and has them
+        relatedSale: commission.relatedSale ? {
+            ...commission.relatedSale,
+            priceAtSale: Number(commission.relatedSale.priceAtSale),
+            totalAmount: Number(commission.relatedSale.totalAmount),
+        } : null,
     }));
 
 
+    // Assemble simplified FinancialsData
     const data: FinancialsData = {
-      staffCommissions: staffCommissions as any,
-      partnerPayouts: partnerPayouts as any,
-      // staffPayouts: [], // Removed this line
-      hostessPayouts: hostessPayoutData,
+      staffCommissions: serializedStaffCommissions as any, // Cast needed after serialization
+      // partnerPayouts: [], // Removed
+      // hostessPayouts: [], // Removed
     };
 
     return NextResponse.json<ApiResponse<FinancialsData>>(
@@ -98,4 +71,3 @@ export async function GET(req: NextRequest) {
     );
   }
 }
-

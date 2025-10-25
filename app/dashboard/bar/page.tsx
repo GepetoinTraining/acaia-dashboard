@@ -7,20 +7,21 @@ import { Box, Package, Plus } from "lucide-react";
 import { useDisclosure } from "@mantine/hooks";
 import { useState, useEffect } from "react";
 import { ApiResponse, AggregatedStock } from "@/lib/types";
-import { InventoryItem, UnitOfMeasure } from "@prisma/client"; // Use UnitOfMeasure
+// --- FIX: Import UnitOfMeasure instead of SmallestUnit ---
+import { InventoryItem, UnitOfMeasure } from "@prisma/client";
 import { CurrentStockTable } from "./components/CurrentStockTable";
 import { CreateInventoryItemModal } from "./components/CreateInventoryItemModal";
-// --- Check this import carefully ---
 import { InventoryItemTable } from "./components/InventoryItemTable";
 import { AddStockModal } from "./components/AddStockModal";
 import { notifications } from "@mantine/notifications"; // Added notifications import
 
 
 // Define the type expected from the API after serialization
+// --- FIX: Use UnitOfMeasure ---
 type SerializedInventoryItem = Omit<InventoryItem, 'storageUnitSizeInSmallest' | 'reorderThresholdInSmallest' | 'createdAt'> & {
   storageUnitSizeInSmallest: number | null;
   reorderThresholdInSmallest: number | null;
-  smallestUnit: UnitOfMeasure;
+  smallestUnit: UnitOfMeasure; // Use the correct enum type
 };
 
 
@@ -152,7 +153,6 @@ function BarClientPage() {
           </Tabs.Panel>
 
           <Tabs.Panel value="items" pt="md">
-            {/* Ensure the imported InventoryItemTable is used */}
             <InventoryItemTable
               items={inventoryItems}
               loading={loadingItems}

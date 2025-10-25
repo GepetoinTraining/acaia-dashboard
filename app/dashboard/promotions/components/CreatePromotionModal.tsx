@@ -1,170 +1,150 @@
-// File: app/dashboard/promotions/components/CreatePromotionModal.tsx
 "use client";
 
-/* // --- COMMENT OUT START ---
-
-import {
-  Modal,
-  TextInput,
-  Select,
-  Button,
-  Stack,
-  LoadingOverlay,
-  Textarea,
-} from "@mantine/core";
+import { Modal, TextInput, Select, NumberInput, Button, Group, Stack } from "@mantine/core";
 import { DateInput } from "@mantine/dates";
 import { useForm } from "@mantine/form";
-// PromotionBulletin does not exist
-// import { Product, PromotionBulletin } from "@prisma/client";
-import { useState, useEffect } from "react";
+import { Product } from "@/lib/types"; // Use client-side Product
+import { DiscountType, Promotion } from "@prisma/client"; // This import will fail until you run 'npx prisma generate'
 import { ApiResponse } from "@/lib/types";
 import { notifications } from "@mantine/notifications";
-import dayjs from "dayjs";
-
-// Type does not exist
-// type PromotionBulletin = any;
-type Product = any; // Placeholder
+import { useState } from "react";
+import { PromotionWithProduct } from "../page";
 
 type CreatePromotionModalProps = {
-  opened: boolean;
-  onClose: () => void;
-  onSuccess: () => void;
+    opened: boolean;
+    onClose: () => void;
+    products: Product[]; // Use client-side Product
+    onPromotionCreated: (promotion: PromotionWithProduct) => void;
 };
 
-type ProductSelectData = { label: string; value: string };
+// --- FIX: Add 'export' to the function ---
+export function CreatePromotionModal({ opened, onClose, products, onPromotionCreated }: CreatePromotionModalProps) {
+    const [loading, setLoading] = useState(false);
+    const form = useForm({
+        initialValues: {
+            name: "",
+            productId: null as string | null,
+            discountType: DiscountType.PERCENTAGE,
+            discountValue: 0,
+            startDate: new Date(),
+            endDate: null as Date | null,
+        },
+        // Add validation as needed
+    });
 
-export function CreatePromotionModal({
-  opened,
-  onClose,
-  onSuccess,
-}: CreatePromotionModalProps) {
-  const [loading, setLoading] = useState(false);
-  const [products, setProducts] = useState<ProductSelectData[]>([]);
+    const productOptions = products.map(p => ({
+        value: p.id.toString(),
+        label: p.name,
+    }));
 
-  const form = useForm({
-    initialValues: {
-      title: "",
-      body: "",
-      bonusOffer: "",
-      productId: null as string | null,
-      expiresAt: dayjs().add(1, "day").toDate(),
-    },
-    validate: {
-      title: (val) => (val.trim().length < 2 ? "Título inválido" : null),
-      body: (val) => (val.trim().length < 2 ? "Corpo inválido" : null),
-      expiresAt: (val) =>
-        dayjs(val).isBefore(dayjs()) ? "Data de expiração deve ser futura" : null,
-    },
-  });
+    const handleSubmit = async (values: typeof form.values) => {
+        setLoading(true);
+        if (!values.productId || !values.startDate) {
+             notifications.show({ title: "Erro", message: "Campos obrigatórios em falta.", color: "red" });
+             setLoading(false);
+             return;
+        }
 
-  // Fetch products for dropdown
-  useEffect(() => {
-    if (opened) {
-      // API route might be commented out too
-    //   fetch("/api/products")
-    //     .then((res) => res.json())
-    //     .then((result: ApiResponse<Product[]>) => {
-    //       if (result.success && result.data) {
-    //         setProducts(
-    //           result.data.map((p) => ({
-    //             label: p.name,
-    //             value: p.id.toString(),
-    //           }))
-    //         );
-    //       }
-    //     });
-    } else {
-      form.reset();
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [opened]);
+        try {
+            // This type 'Promotion' will cause an error until prisma generate is run
+            const payload: Omit<Promotion, 'id' | 'createdAt'> = {
+                ...values,
+                productId: Number(values.productId),
+                discountValue: Number(values.discountValue),
+                startDate: values.startDate,
+                endDate: values.endDate || null,
+                isActive: true, // Set default
+            };
 
-  const handleSubmit = async (values: typeof form.values) => {
-    setLoading(true);
-    try {
-      // API route is likely commented out
-    //   const response = await fetch("/api/promotions", {
-    //     method: "POST",
-    //     headers: { "Content-Type": "application/json" },
-    //     body: JSON.stringify(values),
-    //   });
+            const response = await fetch("/api/promotions", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+            });
 
-    //   const result: ApiResponse<PromotionBulletin> = await response.json();
-    //   if (!response.ok) throw new Error(result.error || "Falha ao criar promoção");
+            const result: ApiResponse<PromotionWithProduct> = await response.json();
+            if (!response.ok || !result.success) {
+                throw new Error(result.error || "Falha ao criar promoção");
+            }
 
-      notifications.show({
-        title: "Sucesso! (Simulado)",
-        message: "Promoção criada e enviada para as hostesses.",
-        color: "green",
-      });
-      onSuccess();
-    } catch (error: any) {
-      notifications.show({
-        title: "Erro (Simulado)",
-        message: error.message,
-        color: "red",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
+            notifications.show({
+                title: "Sucesso",
+                message: "Promoção criada com sucesso!",
+                color: "green",
+            });
+            onPromotionCreated(result.data!); // Notify parent
+            form.reset();
+            onClose();
 
-  return (
-    <Modal
-      opened={opened}
-      onClose={onClose}
-      title="Criar Nova Promoção (Desativado)"
-      centered
-    >
-      <LoadingOverlay visible={loading} />
-      <form onSubmit={form.onSubmit(handleSubmit)}>
-        <Stack>
-          <TextInput
-            required
-            label="Título"
-            placeholder="Ex: 🔥 2X COMISSÃO! 🔥"
-            {...form.getInputProps("title")}
-            disabled
-          />
-          <Textarea
-            required
-            label="Corpo"
-            placeholder="Ex: Vendam a garrafa X e ganhem..."
-            {...form.getInputProps("body")}
-            disabled
-          />
-          <TextInput
-            label="Oferta Bônus"
-            placeholder="Ex: 2x Comissão, R$50 Bonus"
-            {...form.getInputProps("bonusOffer")}
-             disabled
-          />
-          <Select
-            label="Vincular a um Produto (Opcional)"
-            placeholder="Selecione um produto"
-            data={products}
-            searchable
-            clearable
-            {...form.getInputProps("productId")}
-             disabled
-          />
-          <DateInput
-            required
-            label="Expira em"
-            valueFormat="DD/MM/YYYY HH:mm"
-            {...form.getInputProps("expiresAt")}
-             disabled
-          />
-          <Button type="submit" mt="md" color="pastelGreen" loading={loading} disabled>
-            Lançar Promoção (Desativado)
-          </Button>
-        </Stack>
-      </form>
-    </Modal>
-  );
+        } catch (error: any) {
+            notifications.show({
+                title: "Erro",
+                message: error.message,
+                color: "red",
+            });
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <Modal opened={opened} onClose={onClose} title="Criar Nova Promoção" centered>
+            <form onSubmit={form.onSubmit(handleSubmit)}>
+                <Stack>
+                    <TextInput
+                        label="Nome da Promoção"
+                        placeholder="Ex: Happy Hour Cerveja"
+                        required
+                        {...form.getInputProps("name")}
+                    />
+                    <Select
+                        label="Produto"
+                        placeholder="Selecione um produto"
+                        data={productOptions}
+                        searchable
+                        required
+                        {...form.getInputProps("productId")}
+                    />
+                    <Group grow>
+                        <Select
+                            label="Tipo de Desconto"
+                            data={[
+                                { value: DiscountType.PERCENTAGE, label: "Percentagem (%)" },
+                                { value: DiscountType.FIXED, label: "Valor Fixo (R$)" },
+                            ]}
+                            required
+                            {...form.getInputProps("discountType")}
+                        />
+                        <NumberInput
+                            label="Valor do Desconto"
+                            placeholder={form.values.discountType === DiscountType.PERCENTAGE ? "Ex: 15" : "Ex: 5.50"}
+                            min={0}
+                            decimalScale={2}
+                            required
+                            {...form.getInputProps("discountValue")}
+                        />
+                    </Group>
+                    <Group grow>
+                        <DateInput
+                            label="Data de Início"
+                            valueFormat="DD/MM/YYYY"
+                            required
+                            {...form.getInputProps("startDate")}
+                        />
+                        <DateInput
+                            label="Data de Fim (Opcional)"
+                            valueFormat="DD/MM/YYYY"
+                            clearable
+                            minDate={form.values.startDate || new Date()}
+                            {...form.getInputProps("endDate")}
+                        />
+                    </Group>
+                    <Group justify="flex-end" mt="md">
+                        <Button variant="default" onClick={onClose} disabled={loading}>Cancelar</Button>
+                        <Button type="submit" loading={loading}>Criar Promoção</Button>
+                    </Group>
+                </Stack>
+            </form>
+        </Modal>
+    );
 }
-
-*/ // --- COMMENT OUT END ---
-
-// Add a placeholder export to prevent build errors about empty modules
-export {};

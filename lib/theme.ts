@@ -1,39 +1,29 @@
+// File: lib/theme.ts
 "use client";
 
 import { createTheme, MantineColorsTuple } from "@mantine/core";
 
 // Define a Pastel Green
 const pastelGreen: MantineColorsTuple = [
-  "#e6fcf5", // Lightest
-  "#d5f9ec",
-  "#aef2d8",
-  "#85ebc2", // Primary light shade?
-  "#62e4ae", // Main shade?
-  "#4add9f",
-  "#3cc997", // Darker shade?
-  "#30b184",
-  "#249c73",
-  "#138663"  // Darkest
+  "#e6fcf5", // Lightest 0
+  "#d5f9ec", // 1
+  "#aef2d8", // 2
+  "#85ebc2", // 3
+  "#62e4ae", // 4 Main shade?
+  "#4add9f", // 5
+  "#3cc997", // 6 Darker shade?
+  "#30b184", // 7
+  "#249c73", // 8
+  "#138663"  // Darkest 9
 ];
 
+// CORRECTED: Only one theme definition using pastelGreen
 export const theme = createTheme({
-  primaryColor: "pastelGreen", // Change primary color
+  primaryColor: "pastelGreen", // Use the pastel green
   colors: {
-    pastelGreen, // Add the new color
+    pastelGreen, // Add the new color tuple
   },
-  // ... keep other theme settings like fontFamily ...
-  // Adjust dark mode if needed - pastel on dark can be tricky
-  // defaultColorScheme: "light", // Maybe default to light theme?
-});
-
-export const theme = createTheme({
-  /** Put your mantine theme override here */
-  // colorScheme: "dark", // REMOVED: Set in MantineProvider instead for v8
-  primaryColor: "privacyGold",
-  colors: {
-    privacyGold,
-  },
-  fontFamily: "Inter, sans-serif",
+  fontFamily: "Inter, sans-serif", // Keep original font settings
   headings: {
     fontFamily: "Inter, sans-serif",
     fontWeight: "600",
@@ -50,8 +40,9 @@ export const theme = createTheme({
         shadow: "sm",
       },
     },
-    // Ensure Input styles are compatible with v8 if needed
-    // Input might now be TextInput, NumberInput etc. specific styles
-    // Or use InputWrapper
+    // Add other component overrides if needed
   },
+  // You might want to explicitly set defaultColorScheme here or in MantineProvider
+  // defaultColorScheme: 'light', // Pastels often work better on light backgrounds
 });
+

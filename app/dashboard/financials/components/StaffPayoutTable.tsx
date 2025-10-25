@@ -1,11 +1,13 @@
+// File: app/dashboard/financials/components/StaffPayoutTable.tsx
 "use client";
 
 import { Table, Button, Text, Center, Loader, Badge } from "@mantine/core";
-import { StaffCommissionWithDetails } from "@/lib/types";
+import { StaffCommissionWithDetails } from "@/lib/types"; // Ensure this type matches the simplified data
 import dayjs from "dayjs";
 import { notifications } from "@mantine/notifications";
 import { useState } from "react";
 import { ApiResponse } from "@/lib/types";
+import { formatCurrency } from "@/lib/utils"; // Import formatCurrency
 
 type StaffPayoutTableProps = {
   commissions: StaffCommissionWithDetails[];
@@ -42,33 +44,38 @@ export function StaffPayoutTable({
     }
   };
 
-  const rows = commissions.map((item) => (
+  // Ensure commission structure matches expected fields or handle potential errors
+  const rows = commissions?.map((item: StaffCommissionWithDetails) => (
     <Table.Tr key={item.id}>
       <Table.Td>
         {dayjs(item.createdAt).format("DD/MM/YYYY")}
       </Table.Td>
-      <Table.Td>{item.staff.name}</Table.Td>
+      <Table.Td>{item.staff?.name || 'Staff Desconhecido'}</Table.Td>
       <Table.Td>
-        <Badge color={item.commissionType === 'cac_bonus' ? 'blue' : 'gray'}>
-          {item.commissionType}
+        {/* --- FIX: Removed conditional color logic --- */}
+        <Badge color="blue" variant="light"> {/* Use a consistent color */}
+          {item.commissionType} {/* Should always be 'sale' now */}
         </Badge>
       </Table.Td>
       <Table.Td>
-        <Text fw={700}>R$ {item.amountEarned.toFixed(2)}</Text>
+        {/* Safely access and format amountEarned */}
+        <Text fw={700}>{formatCurrency(Number(item.amountEarned || 0))}</Text>
       </Table.Td>
-      <Table.Td>{item.notes}</Table.Td>
+      <Table.Td>{item.notes || "N/A"}</Table.Td>
       <Table.Td>
         <Button
           size="xs"
           color="green"
           onClick={() => handleMarkAsPaid(item.id)}
           loading={loading[item.id]}
+          disabled={!item.id} // Disable if no ID
         >
           Pagar
         </Button>
       </Table.Td>
     </Table.Tr>
-  ));
+  )) || []; // Handle commissions being null or undefined
+
 
   return (
     <Table.ScrollContainer minWidth={800}>
@@ -84,7 +91,16 @@ export function StaffPayoutTable({
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
-          {rows.length > 0 ? (
+           {/* Add loading state handling */}
+           {loading ? (
+                <Table.Tr>
+                    <Table.Td colSpan={6}>
+                        <Center h={200}>
+                            <Loader color="pastelGreen" />
+                        </Center>
+                    </Table.Td>
+                </Table.Tr>
+           ) : rows.length > 0 ? (
             rows
           ) : (
             <Table.Tr>

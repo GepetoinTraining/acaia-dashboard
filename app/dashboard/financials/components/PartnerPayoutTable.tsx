@@ -1,117 +1,77 @@
-// File: app/dashboard/financials/components/PartnerPayoutTable.tsx
+// File: app/dashboard/components/LiveMap.tsx (Simplified for Acaia MVP)
 "use client";
 
-/* // --- COMMENT OUT START ---
-import { Table, Button, Text, Center, Loader, Badge } from "@mantine/core";
-// PartnerPayoutWithDetails does not exist in lib/types
-// import { PartnerPayoutWithDetails } from "@/lib/types";
-import dayjs from "dayjs";
-import { notifications } from "@mantine/notifications";
-import { useState } from "react";
-import { ApiResponse } from "@/lib/types";
-import { Prisma } from "@prisma/client"; // Import Prisma if needed for Decimal
+import { SimpleGrid, Paper, Title, Stack, Text, Group, Badge } from "@mantine/core";
+import { LiveClient } from "@/lib/types"; // Import the correct LiveClient type
+import { LiveClientCard } from "./LiveClientCard";
+// --- FIX: Add SeatingArea, Visit, Client imports ---
+import { SeatingArea, Visit, Client } from "@prisma/client";
 
-
-// Define a placeholder type if PartnerPayoutWithDetails is truly removed
-type PartnerPayoutWithDetails = any; // Placeholder
-
-
-type PartnerPayoutTableProps = {
-  payouts: PartnerPayoutWithDetails[];
-  onSuccess: () => void;
+// Define the shape of the data coming from the API (including the nested visit info)
+// This type is used locally if needed, but the main data comes via props
+type SeatingAreaWithVisit = SeatingArea & {
+  // --- FIX: Ensure Visit and Client types are available via import ---
+  visits: (Visit & { client: Client | null })[];
 };
 
-export function PartnerPayoutTable({
-  payouts,
-  onSuccess,
-}: PartnerPayoutTableProps) {
-  const [loading, setLoading] = useState<Record<number, boolean>>({});
+type LiveMapProps = {
+  // Pass active visits/clients
+  activeVisits: LiveClient[];
+  // seatingAreas?: SeatingAreaWithVisit[]; // Optional: Pass areas to show occupancy map
+};
 
-  const handleMarkAsPaid = async (payoutId: number) => {
-    setLoading((prev) => ({ ...prev, [payoutId]: true }));
-    try {
-        // API route is likely commented out too
-    //   const response = await fetch("/api/financials/partner", {
-    //     method: "PATCH",
-    //     headers: { "Content-Type": "application/json" },
-    //     body: JSON.stringify({ payoutId }),
-    //   });
-    //   const result: ApiResponse = await response.json();
-    //   if (!response.ok) throw new Error(result.error || "Falha ao pagar");
 
-      notifications.show({
-        title: "Sucesso! (Simulado)", // Indicate simulation
-        message: "Pagamento de parceiro marcado como pago.",
-        color: "green",
-      });
-      onSuccess(); // Refresh the table (though data source is likely gone)
-    } catch (error: any) {
-      notifications.show({ title: "Erro (Simulado)", message: error.message, color: "red" });
-    } finally {
-      setLoading((prev) => ({ ...prev, [payoutId]: false }));
-    }
-  };
+export function LiveMap({ activeVisits }: LiveMapProps) {
 
-  // Ensure payout structure matches expected fields or handle potential errors
-  const rows = payouts?.map((item: any = {}) => ( // Add default empty object
-    <Table.Tr key={item?.id || Math.random()}> // Use random key if id missing
-      <Table.Td>
-        {item?.createdAt ? dayjs(item.createdAt).format("DD/MM/YYYY") : 'N/A'}
-      </Table.Td>
-      <Table.Td>{item?.partner?.companyName || "N/A"}</Table.Td>
-      <Table.Td>
-        <Text>Venda do item: {item?.sale?.product?.name || "N/A"}</Text>
-        <Text size="xs" c="dimmed">ID Venda: {item?.saleId || 'N/A'}</Text>
-      </Table.Td>
-      <Table.Td>
-         {/* Safely access and format amountDue */}
-        <Text fw={700}>R$ {Number(item?.amountDue || 0).toFixed(2)}</Text>
-      </Table.Td>
-      <Table.Td>
-        <Button
-          size="xs"
-          color="green"
-          onClick={() => handleMarkAsPaid(item?.id)}
-          loading={loading[item?.id]}
-          disabled={!item?.id} // Disable if no ID
-        >
-          Pagar
-        </Button>
-      </Table.Td>
-    </Table.Tr>
-  )) || []; // Handle payouts being null or undefined
+  // Group visits by seatingAreaId for display (Optional Enhancement)
+  const visitsByArea: { [key: number]: LiveClient[] } = {};
+  const unassignedVisits: LiveClient[] = [];
+
+  // Add null check for activeVisits before iterating
+  (activeVisits || []).forEach(visit => {
+      // Use optional chaining for safety
+      if (visit?.seatingAreaId) {
+          if (!visitsByArea[visit.seatingAreaId]) {
+              visitsByArea[visit.seatingAreaId] = [];
+          }
+          visitsByArea[visit.seatingAreaId].push(visit);
+      } else {
+          // Add null/undefined check for visit itself
+          if (visit) {
+              unassignedVisits.push(visit);
+          }
+      }
+  });
+
 
   return (
-    <Table.ScrollContainer minWidth={800}>
-      <Table verticalSpacing="sm" striped highlightOnHover withTableBorder>
-        <Table.Thead>
-          <Table.Tr>
-            <Table.Th>Data</Table.Th>
-            <Table.Th>Parceiro</Table.Th>
-            <Table.Th>Origem</Table.Th>
-            <Table.Th>Valor (R$)</Table.Th>
-            <Table.Th>Ação</Table.Th>
-          </Table.Tr>
-        </Table.Thead>
-        <Table.Tbody>
-          {rows.length > 0 ? (
-            rows
-          ) : (
-            <Table.Tr>
-              <Table.Td colSpan={5}>
-                <Text ta="center" c="dimmed" py="lg">
-                  Nenhum pagamento de parceiro pendente (Funcionalidade desativada).
-                </Text>
-              </Table.Td>
-            </Table.Tr>
-          )}
-        </Table.Tbody>
-      </Table>
-    </Table.ScrollContainer>
+    <Paper withBorder p="md" radius="md">
+      <Title order={4}>Clientes Ativos ({activeVisits?.length ?? 0})</Title> {/* Added null check */}
+      <Text size="sm" c="dimmed" mb="md">
+        Clientes que estão na casa com um check-in ativo.
+      </Text>
+      <Stack>
+        {/* Added null check */}
+        {(activeVisits?.length ?? 0) > 0 ? (
+          activeVisits.map((client) => (
+            // Use LiveClientCard component
+            <LiveClientCard key={client.visitId} client={client} />
+          ))
+        ) : (
+          <Text c="dimmed">Nenhum cliente na casa.</Text>
+        )}
+      </Stack>
+      {/* Example of showing unassigned clients if any */}
+       {unassignedVisits.length > 0 && (
+           <>
+                <Title order={5} mt="md">Clientes Aguardando Mesa ({unassignedVisits.length})</Title>
+                <Stack mt="xs">
+                    {unassignedVisits.map(client => (
+                        <LiveClientCard key={client.visitId} client={client} />
+                    ))}
+                </Stack>
+           </>
+       )}
+    </Paper>
   );
 }
-
-*/ // --- COMMENT OUT END ---
-
-// Add a placeholder export to prevent build errors about empty modules
-export {};

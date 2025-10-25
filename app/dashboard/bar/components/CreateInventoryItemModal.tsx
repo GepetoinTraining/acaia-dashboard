@@ -37,25 +37,33 @@ export function CreateInventoryItemModal({
       storageUnitName: "",
       smallestUnit: UnitOfMeasure.unit,
       storageUnitSize: 1,
-      reorderThreshold: 0,
+      reorderThreshold: '' as number | string | null,
     },
     validate: {
       name: (val) => (val.trim().length < 2 ? "Nome inválido" : null),
-      storageUnitName: (val) => (val !== null && val.trim().length < 2 ? "Nome inválido (opcional, mas se preenchido deve ser válido)" : null), // Corrected validation
+      storageUnitName: (val) => (val && val.trim().length > 0 && val.trim().length < 2 ? "Nome da unidade inválido" : null),
       storageUnitSize: (val) => (val === null || val === undefined || Number(val) <= 0 ? "Tamanho deve ser positivo" : null),
       smallestUnit: (val) => (Object.values(UnitOfMeasure).includes(val) ? null : "Unidade inválida"),
-      reorderThreshold: (val) => (val === null || val === undefined || Number(val) < 0 ? "Nível de alerta não pode ser negativo" : null),
+       reorderThreshold: (val) => {
+           if (val === '' || val === null || val === undefined) return null;
+           const num = Number(val);
+           return isNaN(num) || num < 0 ? "Nível de alerta não pode ser negativo" : null;
+       },
     },
   });
 
   const handleSubmit = async (values: typeof form.values) => {
     setLoading(true);
     try {
+        const thresholdValue = Number(values.reorderThreshold);
+        const reorderThresholdForDb = (!isNaN(thresholdValue) && thresholdValue > 0) ? thresholdValue : null;
+
         const payload = {
-            ...values,
-            storageUnitName: values.storageUnitName || null, // Ensure null if empty
+            name: values.name,
+            storageUnitName: values.storageUnitName?.trim() || null,
+            smallestUnit: values.smallestUnit,
             storageUnitSize: Number(values.storageUnitSize) || 1,
-            reorderThreshold: values.reorderThreshold === '' || values.reorderThreshold === null ? null : Number(values.reorderThreshold), // Handle empty string/null for optional field
+            reorderThreshold: reorderThresholdForDb,
         };
 
       const response = await fetch("/api/inventory", {

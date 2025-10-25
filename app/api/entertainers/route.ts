@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { ApiResponse } from "@/lib/types";
 import { NextRequest, NextResponse } from "next/server";
-import { Entertainer, Prisma } from "@prisma/client";
+import { Entertainer, Prisma, StaffRole } from "@prisma/client"; // Added StaffRole
 
 /**
  * GET /api/entertainers
@@ -44,12 +44,12 @@ export async function GET(req: NextRequest) {
 /**
  * POST /api/entertainers
  * Creates a new entertainer.
- * Requires Admin/Manager role (TODO: Implement stricter role check).
+ * Requires Admin/Manager role.
  */
 export async function POST(req: NextRequest) {
     const session = await getSession();
-    // TODO: Add stricter role check (Manager/Admin)
-    if (!session.staff?.isLoggedIn || session.staff.role !== 'Admin' && session.staff.role !== 'Manager') {
+    // Stricter role check
+    if (!session.staff?.isLoggedIn || (session.staff.role !== StaffRole.Admin && session.staff.role !== StaffRole.Manager)) {
         return NextResponse.json<ApiResponse>(
             { success: false, error: "Não autorizado (Admin/Manager required)" },
             { status: 403 } // Forbidden
@@ -68,16 +68,10 @@ export async function POST(req: NextRequest) {
 
         // --- Validation ---
         if (!name || name.trim().length < 1) {
-            return NextResponse.json<ApiResponse>(
-                { success: false, error: "Nome do artista é obrigatório." },
-                { status: 400 }
-            );
+            return NextResponse.json<ApiResponse>({ success: false, error: "Nome do artista é obrigatório." }, { status: 400 });
         }
         if (!type || type.trim().length < 1) {
-            return NextResponse.json<ApiResponse>(
-                { success: false, error: "Tipo do artista é obrigatório." },
-                { status: 400 }
-            );
+            return NextResponse.json<ApiResponse>({ success: false, error: "Tipo do artista é obrigatório." }, { status: 400 });
         }
         // --- End Validation ---
 
@@ -97,12 +91,20 @@ export async function POST(req: NextRequest) {
 
     } catch (error: any) {
         console.error("POST /api/entertainers error:", error);
-         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002' && error.meta?.target?.includes('name')) {
-             // Assuming name should be unique based on schema/usage pattern
-             return NextResponse.json<ApiResponse>(
-                 { success: false, error: "Já existe um artista com este nome." },
-                 { status: 409 } // Conflict
-             );
+         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+             // --- FIX STARTS HERE ---
+             const target = error.meta?.target;
+             const isNameError = Array.isArray(target) && target.includes('name');
+             // --- FIX ENDS HERE ---
+
+             if (isNameError) {
+                 // Assuming name should be unique based on schema/usage pattern
+                 return NextResponse.json<ApiResponse>(
+                     { success: false, error: "Já existe um artista com este nome." },
+                     { status: 409 } // Conflict
+                 );
+             }
+             // Handle other unique constraints if necessary
          }
         return NextResponse.json<ApiResponse>(
             { success: false, error: "Erro ao criar artista." },

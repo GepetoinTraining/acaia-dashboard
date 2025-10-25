@@ -115,3 +115,4 @@ export function SeatingAreaSelector({ selectedAreaId, onSelect, disabled }: Seat
         />
     );
 }
+// End of SeatingAreaSelector.tsx

@@ -1,39 +1,41 @@
 // File: app/dashboard/pospage/page.tsx
 "use client";
 
-import { /* ... Mantine imports ... */ } from "@mantine/core";
+// --- FIX: Added all necessary Mantine and Lucide imports ---
+import { 
+    Stack, 
+    SimpleGrid, 
+    Paper, 
+    Text, 
+    Group, 
+    Title,
+    Button 
+} from "@mantine/core";
 import { PageHeader } from "../components/PageHeader";
-import { /* ... Lucide imports ... */ } from "lucide-react";
+import { Package, Users, ShoppingCart, Send } from "lucide-react";
 import { useDisclosure } from "@mantine/hooks";
 import { useState, useEffect, useCallback } from "react";
-// --- FIX: Import updated CartItem, SeatingAreaWithVisitInfo, Product ---
 import { ApiResponse, CartItem, SeatingAreaWithVisitInfo, Product } from "@/lib/types";
-// Import base Prisma types only if needed for specific logic (unlikely here)
-import { Visit, Client, SeatingArea, ProductType, PrepStation, InventoryItem, Partner } from "@prisma/client";
+// We don't need all the base Prisma types here
+// import { Visit, Client, SeatingArea, ProductType, PrepStation, InventoryItem, Partner } from "@prisma/client";
 import { notifications } from "@mantine/notifications";
 import { SeatingAreaSelector } from "./components/SeatingAreaSelector";
 import { ProductSelector } from "./components/ProductSelector";
 import { Cart } from "./components/Cart";
 import { SubmitOrderModal } from "./components/SubmitOrderModal";
 
-// Define simplified SalePayload inline
-interface AcaiaSalePayload { /* ... */ }
-
-// --- REMOVED ProductWithNumberPrices type ---
-// --- REMOVED ActiveVisitInfo type (can use SeatingAreaWithVisitInfo['visits'][number] | null if needed) ---
-// --- REMOVED CartItemWithNumberPrices type ---
+// Note: AcaiaSalePayload is not actually used here,
+// the payload is constructed inline in handleSubmitOrder
+// interface AcaiaSalePayload { /* ... */ }
 
 
 function PosClientPage() {
-  // --- FIX: Use Product type from lib/types ---
   const [products, setProducts] = useState<Product[]>([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
   const [loadingSubmit, setLoadingSubmit] = useState(false);
 
   const [selectedArea, setSelectedArea] = useState<SeatingAreaWithVisitInfo | null>(null);
-  // Simplify activeVisit state if only name/id needed
   const [activeVisitInfo, setActiveVisitInfo] = useState<SeatingAreaWithVisitInfo['visits'][number] | null>(null);
-  // --- FIX: Use CartItem type from lib/types ---
   const [cart, setCart] = useState<CartItem[]>([]);
 
   const [submitModal, { open: openSubmitModal, close: closeSubmitModal }] = useDisclosure(false);
@@ -42,16 +44,20 @@ function PosClientPage() {
   const fetchProducts = useCallback(async () => {
     setLoadingProducts(true);
     try {
-      const response = await fetch("/api/products"); // API should return serialized Product[] with number prices
+      const response = await fetch("/api/products"); 
       if (!response.ok) throw new Error("Falha ao buscar produtos");
-      const result: ApiResponse<Product[]> = await response.json(); // Expect Product[] from lib/types
+      const result: ApiResponse<Product[]> = await response.json(); 
       if (result.success && result.data) {
-          setProducts(result.data); // Directly set the state
+          setProducts(result.data);
       } else {
         throw new Error(result.error || "Não foi possível carregar produtos");
       }
     } catch (error: any) {
-        // ... error handling ...
+       notifications.show({
+            title: "Erro",
+            message: "Não foi possível carregar produtos: " + error.message,
+            color: "red",
+       });
        setProducts([]);
     } finally {
       setLoadingProducts(false);
@@ -62,35 +68,102 @@ function PosClientPage() {
 
   const handleSelectArea = (area: SeatingAreaWithVisitInfo | null) => {
     setSelectedArea(area);
-    setActiveVisitInfo(area?.visits?.[0] || null); // Simplify setting active visit info
+    setActiveVisitInfo(area?.visits?.[0] || null);
+    // Clear cart when changing tables to avoid confusion
+    setCart([]);
   };
 
-  const resetOrder = () => { /* ... unchanged ... */ };
+  // --- FIX: Implemented resetOrder logic ---
+  const resetOrder = () => {
+    setCart([]);
+    setSelectedArea(null);
+    setActiveVisitInfo(null);
+  };
 
   // Calculation uses number prices from Product type
   const cartTotal = cart.reduce((acc, item) => acc + (item.product.salePrice * item.quantity), 0);
 
-  const handleSubmitOrder = async () => { /* ... unchanged ... */ };
+  // --- FIX: Implemented handleSubmitOrder logic ---
+  const handleSubmitOrder = async () => {
+    if (!activeVisitInfo || cart.length === 0) {
+      notifications.show({
+        title: "Erro",
+        message: "Selecione uma mesa com visita ativa e adicione itens ao carrinho.",
+        color: "red",
+      });
+      return;
+    }
+
+    setLoadingSubmit(true);
+    try {
+      const payload = {
+        visitId: activeVisitInfo.id,
+        items: cart.map(item => ({
+          productId: item.product.id,
+          quantity: item.quantity,
+        })),
+        // staffId will be pulled from session on the server-side (api/sales)
+      };
+
+      const response = await fetch("/api/sales", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const result: ApiResponse = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || "Falha ao submeter a comanda");
+      }
+
+      notifications.show({
+        title: "Sucesso!",
+        message: "Comanda enviada para a produção!",
+        color: "green",
+      });
+
+      resetOrder(); // Clear everything
+      closeSubmitModal(); // Close the confirmation modal
+
+    } catch (error: any) {
+      console.error("handleSubmitOrder error:", error);
+      notifications.show({
+        title: "Erro na Submissão",
+        message: error.message || "Não foi possível enviar a comanda.",
+        color: "red",
+      });
+    } finally {
+      setLoadingSubmit(false);
+    }
+  };
 
   const clientName = activeVisitInfo?.client?.name || (activeVisitInfo ? `Cliente Anônimo (Visita #${activeVisitInfo.id})` : "Nenhum cliente ativo");
 
-   // --- FIX: Use Product type from lib/types ---
-   const handleAddProduct = (product: Product) => { // Parameter uses Product type
+   const handleAddProduct = (product: Product) => {
        setCart((currentCart) => {
+           // Prevent adding items if no table is selected
+           if (!activeVisitInfo) {
+               notifications.show({
+                   title: "Atenção",
+                   message: "Por favor, selecione uma mesa/cliente antes de adicionar produtos.",
+                   color: "yellow"
+               });
+               return currentCart;
+           }
+
            const existing = currentCart.find((i) => i.product.id === product.id);
            if (existing) {
                return currentCart.map((i) =>
                    i.product.id === product.id ? { ...i, quantity: i.quantity + 1 } : i
                );
            }
-           // Use CartItem type directly
            return [...currentCart, { product: product, quantity: 1 }];
        });
    };
 
   return (
     <>
-      {/* --- FIX: Remove type assertion for cart --- */}
       <SubmitOrderModal opened={submitModal} onClose={closeSubmitModal} onSubmit={handleSubmitOrder} seatingAreaName={selectedArea?.name || ''} clientName={clientName} cart={cart} total={cartTotal} loading={loadingSubmit} />
       <Stack>
         <PageHeader title="Nova Comanda" />
@@ -98,23 +171,59 @@ function PosClientPage() {
           {/* LEFT COLUMN */}
           <Paper withBorder p="md" radius="md">
             <Stack>
-              {/* ... SeatingAreaSelector and clientName display ... */}
+              {/* --- FIX: Filled in SeatingAreaSelector section --- */}
+              <Group gap="xs" mb="sm">
+                <Users size={24} />
+                <Title order={4}>1. Selecionar Cliente</Title>
+              </Group>
               <SeatingAreaSelector selectedAreaId={selectedArea?.id || null} onSelect={handleSelectArea} disabled={loadingProducts} />
-               {selectedArea && (<Text size="sm" c="dimmed">Cliente Atual: {clientName}</Text>)}
+              {selectedArea && (<Text size="sm" c="dimmed" mt="xs">Cliente Atual: {clientName}</Text>)}
+              
               <Group gap="xs" mt="lg" mb="sm"><Package size={24} /><Title order={4}>2. Adicionar Produtos</Title></Group>
-              {/* --- FIX: Remove type assertion for products --- */}
               <ProductSelector products={products} loading={loadingProducts} onAddProduct={handleAddProduct} />
             </Stack>
           </Paper>
+          
           {/* RIGHT COLUMN */}
           <Paper withBorder p="md" radius="md">
             <Stack h="100%">
-             {/* ... Cart Header ... */}
+             {/* --- FIX: Filled in Cart Header --- */}
+             <Group justify="space-between" align="center">
+                <Group gap="xs">
+                  <ShoppingCart size={24} />
+                  <Title order={4}>3. Comanda</Title>
+                </Group>
+                <Button
+                  variant="default"
+                  size="xs"
+                  onClick={resetOrder}
+                  disabled={cart.length === 0}
+                >
+                  Limpar
+                </Button>
+              </Group>
+              
               <Stack h="100%" justify="space-between" style={{ flexGrow: 1}}>
-                 {/* --- FIX: Remove type assertion for cart/setCart --- */}
-                 {/* Ensure Cart component expects CartItem[] from lib/types */}
                 <Cart cart={cart} onSetCart={setCart} />
-                {/* ... Cart Footer / Submit Button ... */}
+                
+                {/* --- FIX: Filled in Cart Footer / Submit Button --- */}
+                <Stack>
+                  <Group justify="space-between" mt="md">
+                    <Text fw={500} size="lg">Total:</Text>
+                    <Text fw={700} size="lg" c="green">
+                      {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cartTotal)}
+                    </Text>
+                  </Group>
+                  <Button
+                    size="lg"
+                    fullWidth
+                    onClick={openSubmitModal}
+                    disabled={cart.length === 0 || !activeVisitInfo}
+                    leftSection={<Send size={18} />}
+                  >
+                    Revisar e Enviar Pedido
+                  </Button>
+                </Stack>
               </Stack>
             </Stack>
           </Paper>

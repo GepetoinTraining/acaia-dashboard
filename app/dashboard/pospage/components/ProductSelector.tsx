@@ -1,13 +1,14 @@
 "use client";
 
 import { Select } from "@mantine/core";
-import { Product } from "@prisma/client";
+// --- FIX: Change this import from "@prisma/client" to "@/lib/types" ---
+import { Product } from "@/lib/types"; 
 import { useState } from "react";
 
 type ProductSelectorProps = {
-  products: Product[];
+  products: Product[]; // This now correctly expects Product with 'number' prices
   loading: boolean;
-  onAddProduct: (product: Product) => void;
+  onAddProduct: (product: Product) => void; // This also expects 'number' prices
 };
 
 export function ProductSelector({
@@ -19,7 +20,8 @@ export function ProductSelector({
 
   const data = products.map((p) => ({
     value: p.id.toString(),
-    label: `${p.name} - R$ ${p.salePrice.toFixed(2)}`,
+    // This .toFixed(2) call confirms the component needs a 'number', not a 'Decimal'
+    label: `${p.name} - ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(p.salePrice)}`,
     product: p,
   }));
 

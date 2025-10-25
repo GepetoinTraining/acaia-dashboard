@@ -1,19 +1,20 @@
 // File: app/api/seating-areas/route.ts
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-import { ApiResponse } from "@/lib/types";
+import { ApiResponse, SeatingAreaWithVisitInfo } from "@/lib/types"; // Updated import
 import { NextRequest, NextResponse } from "next/server";
-import { SeatingArea, SeatingAreaType, Prisma } from "@prisma/client"; // Import Prisma for types
-import { randomBytes } from "crypto"; // For generating tokens
+import { SeatingArea, SeatingAreaType, Prisma } from "@prisma/client";
+import { randomBytes } from "crypto";
 
-// Helper to generate a unique token (can be moved to a util file)
+// Helper to generate a unique token
 function generateUniqueToken(length = 10) {
   return randomBytes(length).toString('hex');
 }
 
 /**
  * GET /api/seating-areas
- * Fetches all active seating areas, potentially with current visit status.
+ * Fetches seating areas, potentially with current visit status.
+ * Accepts ?includeInactive=true query parameter.
  */
 export async function GET(req: NextRequest) {
   const session = await getSession();
@@ -24,39 +25,39 @@ export async function GET(req: NextRequest) {
     );
   }
 
+  const { searchParams } = new URL(req.url);
+  const includeInactive = searchParams.get("includeInactive") === "true";
+
   try {
     const areas = await prisma.seatingArea.findMany({
-      where: {
-        isActive: true, // Typically fetch only active ones for selection
-      },
+      where: includeInactive ? {} : { isActive: true }, // Filter if not including inactive
       include: {
         visits: {
-          where: { exitTime: null },
+          where: { exitTime: null }, // Only include *active* visits
           select: {
             id: true,
             clientId: true,
-            client: { select: { name: true } }
+            client: { select: { name: true } } // Select client name
           },
-          orderBy: { entryTime: 'desc' },
-          take: 1,
+          orderBy: { entryTime: 'desc' }, // Get the most recent active visit if multiple (shouldn't happen)
+          take: 1, // Only need one to know if occupied
         }
       },
       orderBy: { name: "asc" },
     });
 
-    // Define the type explicitly based on the include
-     type SeatingAreaWithVisitInfo = SeatingArea & {
-         visits: {
-             id: number;
-             clientId: number | null;
-             client: { name: string | null; } | null;
-         }[];
-     };
+    // Serialize Decimal fields to numbers/strings before sending JSON
+    const serializedAreas = areas.map(area => ({
+        ...area,
+        reservationCost: Number(area.reservationCost), // Convert Decimal to number
+        // Visits array is already serializable
+    }));
 
 
-    // Cast the result to satisfy the generic ApiResponse type
+    // Use the imported SeatingAreaWithVisitInfo type for the response
     return NextResponse.json<ApiResponse<SeatingAreaWithVisitInfo[]>>(
-      { success: true, data: areas as SeatingAreaWithVisitInfo[] },
+      // Cast the serialized data
+      { success: true, data: serializedAreas as any }, // 'as any' due to Decimal -> number conversion
       { status: 200 }
     );
   } catch (error) {
@@ -76,10 +77,10 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
     const session = await getSession();
     // TODO: Add stricter role check (Manager/Admin)
-    if (!session.staff?.isLoggedIn) {
+    if (!session.staff?.isLoggedIn || (session.staff.role !== 'Admin' && session.staff.role !== 'Manager')) {
         return NextResponse.json<ApiResponse>(
-            { success: false, error: "Não autorizado" },
-            { status: 401 }
+            { success: false, error: "Não autorizado (Admin/Manager required)" },
+            { status: 403 }
         );
     }
 
@@ -94,34 +95,21 @@ export async function POST(req: NextRequest) {
 
         // --- Validation ---
         if (!name || name.trim().length < 1) {
-            return NextResponse.json<ApiResponse>(
-                { success: false, error: "Nome da área é obrigatório." },
-                { status: 400 }
-            );
+            return NextResponse.json<ApiResponse>({ success: false, error: "Nome da área é obrigatório." }, { status: 400 });
         }
          if (!type || !Object.values(SeatingAreaType).includes(type)) {
-             return NextResponse.json<ApiResponse>(
-                 { success: false, error: "Tipo de área inválido." },
-                 { status: 400 }
-             );
+             return NextResponse.json<ApiResponse>({ success: false, error: "Tipo de área inválido." }, { status: 400 });
          }
          const numCapacity = capacity ? parseInt(String(capacity)) : null;
          if (numCapacity !== null && (isNaN(numCapacity) || numCapacity < 0)) {
-              return NextResponse.json<ApiResponse>(
-                  { success: false, error: "Capacidade inválida." },
-                  { status: 400 }
-              );
+              return NextResponse.json<ApiResponse>({ success: false, error: "Capacidade inválida." }, { status: 400 });
          }
          const numCost = reservationCost ? parseFloat(String(reservationCost)) : 0;
           if (isNaN(numCost) || numCost < 0) {
-              return NextResponse.json<ApiResponse>(
-                  { success: false, error: "Custo de reserva inválido." },
-                  { status: 400 }
-              );
+              return NextResponse.json<ApiResponse>({ success: false, error: "Custo de reserva inválido." }, { status: 400 });
          }
         // --- End Validation ---
 
-        // Generate a unique QR token
         const qrCodeToken = generateUniqueToken();
 
         const newArea = await prisma.seatingArea.create({
@@ -129,28 +117,32 @@ export async function POST(req: NextRequest) {
                 name: name.trim(),
                 capacity: numCapacity,
                 type: type,
-                reservationCost: new Prisma.Decimal(numCost),
-                qrCodeToken: qrCodeToken, // Assign generated token
-                isActive: true, // Default to active
+                reservationCost: numCost, // Pass number to Decimal field
+                qrCodeToken: qrCodeToken,
+                isActive: true,
             },
         });
 
+         // Serialize Decimal before returning
+        const serializedArea = {
+            ...newArea,
+            reservationCost: Number(newArea.reservationCost),
+        };
+
         return NextResponse.json<ApiResponse<SeatingArea>>(
-            { success: true, data: newArea },
-            { status: 201 } // 201 Created
+            { success: true, data: serializedArea as any }, // Cast needed
+            { status: 201 }
         );
 
     } catch (error: any) {
         console.error("POST /api/seating-areas error:", error);
          if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002' && error.meta?.target?.includes('name')) {
-             return NextResponse.json<ApiResponse>(
-                 { success: false, error: "Já existe uma área com este nome." },
-                 { status: 409 } // Conflict
-             );
+             return NextResponse.json<ApiResponse>({ success: false, error: "Já existe uma área com este nome." }, { status: 409 });
          }
-        return NextResponse.json<ApiResponse>(
-            { success: false, error: "Erro ao criar área de assento." },
-            { status: 500 }
-        );
+         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002' && error.meta?.target?.includes('qrCodeToken')) {
+             // Highly unlikely, but handle token collision just in case
+             return NextResponse.json<ApiResponse>({ success: false, error: "Falha ao gerar token QR único. Tente novamente." }, { status: 500 });
+         }
+        return NextResponse.json<ApiResponse>({ success: false, error: "Erro ao criar área de assento." }, { status: 500 });
     }
 }

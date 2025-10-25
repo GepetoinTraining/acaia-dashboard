@@ -7,28 +7,29 @@ import { MenuDisplay } from "@/components/MenuDisplay"; // Assuming MenuDisplay 
 import { useState } from "react"; // Only client hooks here
 import { notifications } from "@mantine/notifications";
 import { Hand } from "lucide-react";
-import { Prisma } from "@prisma/client"; // Import Prisma for Decimal
+// Removed Prisma import, use Number() instead
 
 // Define props the component accepts
 interface MenuPageContentProps {
     seatingArea: SeatingArea;
-    initialProducts: Product[]; // Receive initial products
+    initialProducts: Product[]; // Receive initial products (prices are strings)
 }
 
-// Helper to convert string price back to number/Decimal if needed by MenuDisplay
-// Adjust based on what MenuDisplay actually expects
+// Helper to convert string price back to number for client-side use
 function deserializeProducts(products: any[]): Product[] {
     return products.map(p => ({
         ...p,
-        costPrice: new Prisma.Decimal(p.costPrice || 0), // Convert string back to Decimal
-        salePrice: new Prisma.Decimal(p.salePrice || 0), // Convert string back to Decimal
-        deductionAmountInSmallestUnit: new Prisma.Decimal(p.deductionAmountInSmallestUnit || 1), // Convert string back to Decimal
+        // Convert serialized string prices back to numbers
+        costPrice: parseFloat(p.costPrice || '0'),
+        salePrice: parseFloat(p.salePrice || '0'),
+        deductionAmountInSmallestUnit: parseFloat(p.deductionAmountInSmallestUnit || '1'),
+        // Ensure other fields match Product type if necessary
     }));
 }
 
 
 export function MenuPageContent({ seatingArea, initialProducts }: MenuPageContentProps) {
-    // Deserialize products received as props (strings -> Decimals/numbers)
+    // Deserialize products received as props (strings -> numbers)
     const [products, setProducts] = useState<Product[]>(deserializeProducts(initialProducts));
     const [loadingCall, setLoadingCall] = useState(false);
 
@@ -63,7 +64,8 @@ export function MenuPageContent({ seatingArea, initialProducts }: MenuPageConten
                             onClick={handleCallServer}
                             loading={loadingCall}
                             variant="light"
-                            color="blue" // Or theme color like "pastelGreen"
+                            // Updated color to theme color
+                            color="pastelGreen"
                             size="md"
                         >
                             Chamar Garçom
@@ -71,8 +73,8 @@ export function MenuPageContent({ seatingArea, initialProducts }: MenuPageConten
                     </Group>
                 </Paper>
 
-                {/* Use the reusable MenuDisplay component */}
-                {/* Ensure MenuDisplay can handle Decimal or Number */}
+                {/* Pass products with number prices to MenuDisplay */}
+                {/* Ensure MenuDisplay can handle 'number' for prices */}
                 <MenuDisplay products={products} />
 
             </Stack>

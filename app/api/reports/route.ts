@@ -1,21 +1,25 @@
+// File: app/api/reports/route.ts
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-import { ApiResponse, ReportData } from "@/lib/types"; // FIX: Import only ReportData
+// --- FIX: Import ReportData, ProductLeaderboardItem ---
+import { ApiResponse, ReportData, ProductLeaderboardItem } from "@/lib/types";
 import { NextRequest, NextResponse } from "next/server";
 import dayjs from "dayjs";
-import { Prisma } from "@prisma/client";
+// --- FIX: Import StaffRole for check, Product for lookup ---
+import { Prisma, StaffRole, Product } from "@prisma/client";
 
 /**
- * GET /api/reports
- * Fetches all aggregated data for the BI dashboard.
+ * GET /api/reports (Simplified for Acaia MVP)
+ * Fetches aggregated data for the BI dashboard (excluding Hostess data).
  * ADMIN-only route.
  */
 export async function GET(req: NextRequest) {
   const session = await getSession();
-  if (!session.staff?.isLoggedIn || session.staff.pin !== "1234") {
+  // --- FIX: Use StaffRole for check ---
+  if (!session.staff?.isLoggedIn || session.staff.role !== StaffRole.Admin) {
     return NextResponse.json<ApiResponse>(
-      { success: false, error: "Não autorizado" },
-      { status: 401 }
+      { success: false, error: "Não autorizado (Admin required)" },
+      { status: 403 } // Use Forbidden
     );
   }
 
@@ -24,18 +28,20 @@ export async function GET(req: NextRequest) {
 
     // --- 1. KPIs ---
     const totalSalesData = await prisma.sale.aggregate({
-      _sum: { priceAtSale: true },
+      _sum: { totalAmount: true }, // Use totalAmount from Sale model
       _count: { id: true },
+      where: {
+        createdAt: { gte: thirtyDaysAgo }, // Aggregate based on the date range
+      },
     });
     const newClients = await prisma.client.count({
       where: { createdAt: { gte: thirtyDaysAgo } },
     });
 
-    const totalRevenue = Number(totalSalesData._sum.priceAtSale || 0);
+    const totalRevenue = Number(totalSalesData._sum.totalAmount || 0); // Use totalAmount
     const totalSales = totalSalesData._count.id;
     const avgSaleValue = totalRevenue / (totalSales || 1);
 
-    // FIX: Match the kpis object structure from lib/types.ts
     const kpis: ReportData["kpis"] = {
       totalRevenue: totalRevenue,
       totalSales: totalSales,
@@ -45,41 +51,38 @@ export async function GET(req: NextRequest) {
 
     // --- 2. Sales by Day (Chart) ---
     const salesByDayRaw = await prisma.sale.groupBy({
-      by: ["createdAt"],
+      // Group by the date part of createdAt
+      by: [Prisma.sql`DATE("createdAt")`], // Use SQL function for date grouping
       _sum: {
-        priceAtSale: true,
+        totalAmount: true, // Sum totalAmount
       },
       where: {
         createdAt: { gte: thirtyDaysAgo },
       },
       orderBy: {
-        createdAt: "asc",
+        // Order by the same date grouping
+         _sum: { createdAt: "asc" }, // Order by the date itself
       },
     });
 
-    // Aggregate by day (since raw data is by timestamp)
-    const salesMap = new Map<string, number>();
-    salesByDayRaw.forEach((sale) => {
-      const date = dayjs(sale.createdAt).format("DD/MM/YYYY");
-      const currentSales = salesMap.get(date) || 0;
-      // FIX: Convert Decimal to Number before adding
-      const newSales = currentSales + Number(sale._sum.priceAtSale || 0);
-      salesMap.set(date, newSales);
-    });
+    // Format for chart
+    const salesOverTime: ReportData["salesOverTime"] = salesByDayRaw.map((saleGroup: any) => {
+        // The date comes back differently depending on DB when using SQL functions
+        const dateKey = saleGroup['date'] || saleGroup['DATE("createdAt")']; // Adjust based on actual key
+        const date = dayjs(dateKey).format("DD/MM/YYYY");
+        const revenue = Number(saleGroup._sum.totalAmount || 0);
+        return {
+            date: date,
+            Revenue: parseFloat(revenue.toFixed(2)), // Ensure 2 decimal places
+        };
+    }).sort((a, b) => dayjs(a.date, "DD/MM/YYYY").unix() - dayjs(b.date, "DD/MM/YYYY").unix()); // Ensure sorted by date string
 
-    // FIX: Match salesOverTime type ({ date, Revenue })
-    const salesOverTime: ReportData["salesOverTime"] = Array.from(
-      salesMap.entries()
-    ).map(([date, sales]) => ({
-      date: date,
-      Revenue: parseFloat(sales.toFixed(2)), // FIX: Use 'Revenue' (capital R)
-    }));
-
-    // --- 3. Top Hostesses ---
+    // --- 3. Top Hostesses (REMOVED BLOCK) ---
+    /*
     const topHostessesRaw = await prisma.sale.groupBy({
-      by: ["hostId"],
+      by: ["hostId"], // THIS FIELD DOES NOT EXIST
       _sum: {
-        priceAtSale: true, // This is what 'Sales' will be
+        priceAtSale: true,
       },
       orderBy: {
         _sum: {
@@ -88,55 +91,59 @@ export async function GET(req: NextRequest) {
       },
       take: 5,
     });
+    // Fetching Host models is also removed
+    const hosts = await prisma.host.findMany({ ... });
+    const hostessLeaderboard: ReportData["hostessLeaderboard"] = ... ;
+    */
+    // --- END REMOVED BLOCK ---
 
-    const hosts = await prisma.host.findMany({
-      where: { id: { in: topHostessesRaw.map((h) => h.hostId) } },
-    });
 
-    // FIX: Match hostessLeaderboard type ({ name, Sales })
-    const hostessLeaderboard: ReportData["hostessLeaderboard"] =
-      topHostessesRaw.map((h) => {
-        const host = hosts.find((host) => host.id === h.hostId);
-        return {
-          name: host?.stageName || "Host Deletada",
-          Sales: Number(h._sum.priceAtSale || 0), // FIX: Use 'Sales' (capital S)
-        };
-      });
-
-    // --- 4. Top Products ---
+    // --- 4. Top Products (by Quantity Sold) ---
     const topProductsRaw = await prisma.sale.groupBy({
       by: ["productId"],
       _sum: {
-        priceAtSale: true, // This is what 'Sales' will be
+        quantity: true, // Sum the quantity sold
+      },
+      where: {
+         createdAt: { gte: thirtyDaysAgo }, // Filter by date range
       },
       orderBy: {
         _sum: {
-          priceAtSale: "desc",
+          quantity: "desc", // Order by most units sold
         },
       },
       take: 5,
     });
 
+    // --- FIX: Handle potential null productId ---
+    const productIds = topProductsRaw
+        .map((p) => p.productId)
+        .filter((id): id is number => id !== null); // Filter out nulls and type guard
+
     const products = await prisma.product.findMany({
-      where: { id: { in: topProductsRaw.map((p) => p.productId) } },
+        where: { id: { in: productIds } }, // Use filtered IDs
+        select: { id: true, name: true } // Select only needed fields
     });
 
-    // FIX: Match productLeaderboard type ({ name, Sales })
+    // --- FIX: Match ProductLeaderboardItem type ---
     const productLeaderboard: ReportData["productLeaderboard"] =
       topProductsRaw.map((p) => {
         const product = products.find((prod) => prod.id === p.productId);
         return {
+          productId: p.productId, // Include ID
           name: product?.name || "Produto Deletado",
-          Sales: Number(p._sum.priceAtSale || 0), // FIX: Use 'Sales' (capital S)
+          totalQuantitySold: Number(p._sum.quantity || 0), // Use quantity sum
         };
-      });
+      // Filter out entries where product might be null if needed
+      }).filter(p => p.productId !== null) as ProductLeaderboardItem[];
 
-    // --- Assemble Report Data ---
-    // FIX: Match the ReportData structure (e.g., 'salesOverTime')
+
+    // --- Assemble Report Data (Excluding Hostess) ---
+    // --- FIX: Use correct field names and exclude hostessLeaderboard ---
     const data: ReportData = {
       kpis: kpis,
       salesOverTime: salesOverTime,
-      hostessLeaderboard: hostessLeaderboard,
+      // hostessLeaderboard: [], // Removed entirely
       productLeaderboard: productLeaderboard,
     };
 
@@ -152,4 +159,3 @@ export async function GET(req: NextRequest) {
     );
   }
 }
-

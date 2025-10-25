@@ -10,9 +10,10 @@ import {
   LoadingOverlay,
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
+// Make sure StaffRole is imported from prisma client for Acaia schema
 import { StaffRole } from "@prisma/client";
 import { useState } from "react";
-import { ApiResponse } from "@/lib/types";
+import { ApiResponse } from "@/lib/types"; // Adjust path if needed
 import { notifications } from "@mantine/notifications";
 import { User, KeyRound } from "lucide-react";
 
@@ -32,17 +33,15 @@ export function CreateStaffModal({
   const form = useForm({
     initialValues: {
       name: "",
-      role: StaffRole.Server, // Adjust default role if needed for Acaia
+      role: StaffRole.Server, // Adjusted default role for Acaia
       pin: "",
     },
     validate: {
       name: (value) => (value.trim().length < 2 ? "Nome inválido" : null),
-      // --- CHANGE THIS LINE ---
       pin: (value) =>
         /^\d{6}$/.test(value) // Exactly 6 digits
           ? null
           : "PIN deve conter exatamente 6 dígitos", // Update error message
-      // --- END CHANGE ---
       role: (value) => (Object.values(StaffRole).includes(value) ? null : "Cargo inválido"),
     },
   });
@@ -84,7 +83,7 @@ export function CreateStaffModal({
     <Modal
       opened={opened}
       onClose={onClose}
-      title="Adicionar Novo Staff"
+      title="Adicionar Novo Staff" // Title can be updated if needed
       centered
     >
       <LoadingOverlay visible={loading} />
@@ -100,6 +99,7 @@ export function CreateStaffModal({
           <Select
             required
             label="Cargo"
+            // Ensure data reflects the updated StaffRole enum for Acaia
             data={Object.values(StaffRole).map((role) => ({
               label: role,
               value: role,
@@ -107,18 +107,19 @@ export function CreateStaffModal({
             {...form.getInputProps("role")}
           />
           <PasswordInput
-        required
-        label="PIN de Acesso"
-        placeholder="6 dígitos" // Update placeholder
-        leftSection={<KeyRound size={16} />}
-        {...form.getInputProps("pin")}
-        maxLength={6} // Add maxLength for better UX
-      />
+            required
+            label="PIN de Acesso"
+            placeholder="6 dígitos" // Updated placeholder
+            leftSection={<KeyRound size={16} />}
+            {...form.getInputProps("pin")}
+            maxLength={6} // Added maxLength
+          />
           <Button
             type="submit"
             mt="md"
-            color="privacyGold"
+            color="pastelGreen" // Use new theme color
             disabled={loading}
+            loading={loading} // Added loading state to button
           >
             Salvar
           </Button>

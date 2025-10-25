@@ -15,7 +15,7 @@ import {
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { notifications } from "@mantine/notifications";
-import { ApiResponse, StaffSession } from "@/lib/types";
+import { ApiResponse, StaffSession } from "@/lib/types"; // Adjust path if needed
 
 export default function StaffLoginPage() {
   const [pin, setPin] = useState("");
@@ -23,6 +23,16 @@ export default function StaffLoginPage() {
   const router = useRouter();
 
   const handleLogin = async () => {
+    // Basic frontend length check before sending
+    if (pin.length !== 6) {
+        notifications.show({
+            title: "PIN Inválido",
+            message: "O PIN deve conter exatamente 6 dígitos.",
+            color: "yellow",
+        });
+        return;
+    }
+
     setLoading(true);
     try {
       const response = await fetch("/api/auth", {
@@ -33,16 +43,17 @@ export default function StaffLoginPage() {
 
       const result: ApiResponse<StaffSession> = await response.json();
 
-      if (response.ok && result.success) {
+      if (response.ok && result.success && result.data) { // Check result.data exists
         notifications.show({
-          title: `Bem-vindo, ${result.data?.name}!`,
+          title: `Bem-vindo, ${result.data.name}!`, // Use result.data
           message: "Login realizado com sucesso.",
           color: "green",
         });
-        // Redirect to the main live dashboard
-        router.push("/dashboard/live");
+        // TODO: Redirect to appropriate Acaia dashboard page (e.g., /dashboard/orders)
+        router.push("/dashboard"); // Using a generic dashboard path for now
       } else {
-        throw new Error(result.message || "PIN inválido ou falha no login");
+        // Use error from result if available, otherwise generic message
+        throw new Error(result.error || result.message || "PIN inválido ou falha no login");
       }
     } catch (error: any) {
       notifications.show({
@@ -50,21 +61,24 @@ export default function StaffLoginPage() {
         message: error.message,
         color: "red",
       });
-      setLoading(false);
-      setPin("");
+      setLoading(false); // Ensure loading stops on error
+      setPin(""); // Clear PIN on error
     }
+    // setLoading(false); // Removed from here, handled in success/error paths
   };
 
   return (
     <Container size="xs" style={{ height: "100vh" }}>
       <Stack justify="center" style={{ height: "100%" }}>
-        <Paper withBorder shadow="xl" p="xl" radius="md" bg="dark.8">
+        {/* Adjusted background potentially for lighter theme if needed */}
+        <Paper withBorder shadow="xl" p="xl" radius="md" /* bg="dark.8" */>
           <LoadingOverlay visible={loading} />
           <Stack align="center">
-            <Image src="/logo.png" alt="Privacy Club Logo" w={250} />
+            {/* Update logo path */}
+            <Image src="/logo.jpg" alt="Acaia Logo" w={150} />
 
-            <Title order={2} c="white" mt="md">
-              Acesso Restrito
+            <Title order={2} /* c="white" */ mt="md">
+              Acaia - Acesso Staff
             </Title>
             <Text c="dimmed" size="sm" ta="center">
               Por favor, insira seu PIN de staff para continuar.
@@ -72,29 +86,30 @@ export default function StaffLoginPage() {
 
             <PinInput
               size="xl"
-              length={4}
+              length={6} // Changed length
               type="number"
               oneTimeCode
               autoFocus
               value={pin}
               onChange={setPin}
-              onComplete={handleLogin}
+              onComplete={handleLogin} // Trigger login on complete
               styles={{
-                input: {
-                  backgroundColor: "var(--mantine-color-dark-6)",
-                  borderColor: "var(--mantine-color-dark-4)",
-                  color: "var(--mantine-color-white)",
-                },
+                // Adjust styles if not using dark theme
+                // input: {
+                //   backgroundColor: "var(--mantine-color-dark-6)",
+                //   borderColor: "var(--mantine-color-dark-4)",
+                //   color: "var(--mantine-color-white)",
+                // },
               }}
             />
 
             <Button
               fullWidth
               mt="lg"
-              color="privacyGold"
+              color="pastelGreen" // Use new theme color
               onClick={handleLogin}
               loading={loading}
-              disabled={pin.length !== 4}
+              disabled={pin.length !== 6} // Changed length check
             >
               Entrar
             </Button>
@@ -104,4 +119,3 @@ export default function StaffLoginPage() {
     </Container>
   );
 }
-

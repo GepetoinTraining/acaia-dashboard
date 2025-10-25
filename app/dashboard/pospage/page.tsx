@@ -13,39 +13,37 @@ import {
   LoadingOverlay,
   Alert
 } from "@mantine/core";
-import { PageHeader } from "../components/PageHeader"; // Adjusted path
+import { PageHeader } from "../components/PageHeader";
 import {
-  Send, // Changed icon for submit
+  Send,
   Package,
   ShoppingCart,
-  Trash2, // Changed icon for reset
-  MapPin // Icon for seating area
+  Trash2,
+  MapPin
 } from "lucide-react";
 import { useDisclosure } from "@mantine/hooks";
 import { useState, useEffect, useCallback } from "react";
-import { ApiResponse, LiveData, CartItem } from "@/lib/types"; // Removed LiveClient, LiveHostess
-import { Product, Visit, Client, SeatingArea } from "@prisma/client";
+// --- FIX: Import SeatingAreaWithVisitInfo ---
+import { ApiResponse, LiveData, CartItem, SeatingAreaWithVisitInfo } from "@/lib/types";
+import { Product, Visit, Client, SeatingArea } from "@prisma/client"; // Keep base types if needed elsewhere
 import { notifications } from "@mantine/notifications";
-import { SeatingAreaSelector } from "./components/SeatingAreaSelector"; // New Component
-// Removed HostessSelector, ClientSelector (replaced by SeatingArea logic)
+import { SeatingAreaSelector } from "./components/SeatingAreaSelector"; // Correct component
 import { ProductSelector } from "./components/ProductSelector";
 import { Cart } from "./components/Cart";
-// Renaming CheckoutModal to SubmitOrderModal makes sense, but reusing for speed
-import { SubmitOrderModal } from "./components/SubmitOrderModal"; // We'll create/rename this next
+import { SubmitOrderModal } from "./components/SubmitOrderModal";
 
-// Define the shape of the data coming from the API (including the nested visit info)
-type SeatingAreaWithVisit = SeatingArea & {
-    visits: (Visit & { client: Client | null })[];
-};
+// --- REMOVED Local SeatingAreaWithVisit type definition ---
+// type SeatingAreaWithVisit = SeatingArea & {
+//     visits: (Visit & { client: Client | null })[];
+// };
 
-// Define a simplified SalePayload for Acaia MVP
+// Define simplified SalePayload inline
 interface AcaiaSalePayload {
-  visitId: number;
+  seatingAreaId: number;
   cart: {
     productId: number;
     quantity: number;
   }[];
-  // staffId is added on the backend from session
 }
 
 function PosClientPage() {
@@ -53,25 +51,33 @@ function PosClientPage() {
   const [loadingProducts, setLoadingProducts] = useState(true);
   const [loadingSubmit, setLoadingSubmit] = useState(false);
 
-  // Order State
-  const [selectedArea, setSelectedArea] = useState<SeatingAreaWithVisit | null>(null);
-  const [activeVisit, setActiveVisit] = useState<Visit & { client: Client | null } | null>(null); // Store the active visit for the selected area
+  // --- FIX: Use SeatingAreaWithVisitInfo for state ---
+  const [selectedArea, setSelectedArea] = useState<SeatingAreaWithVisitInfo | null>(null);
+  // activeVisit can be simplified or derived directly from selectedArea if needed
+  const [activeVisitInfo, setActiveVisitInfo] = useState<{ id: number; clientId: number | null; client: { name: string | null } | null } | null>(null);
   const [cart, setCart] = useState<CartItem[]>([]);
 
   const [submitModal, { open: openSubmitModal, close: closeSubmitModal }] =
     useDisclosure(false);
 
-  // Fetch only products needed for the selector
+  // Fetch only products
   const fetchProducts = useCallback(async () => {
     setLoadingProducts(true);
     try {
-      // Reusing the /api/products endpoint
       const response = await fetch("/api/products");
       if (!response.ok) throw new Error("Falha ao buscar produtos");
-      // Expecting Product[] with relations, though relations might not be needed here
+      // Expect Product[] but prices might be numbers due to API serialization
       const result: ApiResponse<Product[]> = await response.json();
       if (result.success && result.data) {
-        setProducts(result.data);
+          // Deserialize prices back to numbers if needed by Cart/ProductSelector
+          const deserializedProducts = result.data.map(p => ({
+              ...p,
+              // Convert string prices back to numbers
+              costPrice: Number(p.costPrice || 0),
+              salePrice: Number(p.salePrice || 0),
+              deductionAmountInSmallestUnit: Number(p.deductionAmountInSmallestUnit || 1),
+          }));
+        setProducts(deserializedProducts);
       } else {
         throw new Error(result.error || "Não foi possível carregar produtos");
       }
@@ -82,46 +88,45 @@ function PosClientPage() {
         message: error.message,
         color: "red",
       });
+       setProducts([]); // Clear on error
     } finally {
       setLoadingProducts(false);
     }
-  }, []); // Empty dependency array, fetch once
+  }, []);
 
   useEffect(() => {
     fetchProducts();
   }, [fetchProducts]);
 
+  // --- FIX: Update function signature to use SeatingAreaWithVisitInfo ---
   // Handle Seating Area Selection
-  const handleSelectArea = (area: SeatingAreaWithVisit | null) => {
+  const handleSelectArea = (area: SeatingAreaWithVisitInfo | null) => {
     setSelectedArea(area);
+    // Use the simplified visit info from the selected area
     if (area && area.visits.length > 0) {
-      // If an active visit exists for this area, set it
-      setActiveVisit(area.visits[0]);
+      setActiveVisitInfo(area.visits[0]);
     } else {
-      // If no active visit, clear it
-      setActiveVisit(null);
+      setActiveVisitInfo(null);
     }
-    // Optionally reset cart when changing tables? Depends on workflow.
+    // Optionally reset cart
     // setCart([]);
   };
 
-  // Reset current order state
+  // Reset order state
   const resetOrder = () => {
     setSelectedArea(null);
-    setActiveVisit(null);
+    setActiveVisitInfo(null); // Reset simplified info
     setCart([]);
     closeSubmitModal();
-    // No need to refetch products, but might need to refetch seating areas if their status changed
-    // For MVP, we assume staff manually selects an available table
   };
 
-  // Calculate cart total, converting Decimal to number
+  // Calculate cart total (using Number conversion)
   const cartTotal = cart.reduce(
     (acc, item) => acc + (Number(item.product.salePrice) * item.quantity),
     0
   );
 
-  // Handle the submission of the order
+  // Handle order submission
   const handleSubmitOrder = async () => {
      if (!selectedArea) {
          notifications.show({ title: "Erro", message: "Nenhuma mesa selecionada.", color: "red" });
@@ -134,14 +139,8 @@ function PosClientPage() {
 
      setLoadingSubmit(true);
 
-     // Determine the visitId: use existing active visit or indicate creation needed
-     // For MVP, the backend will handle finding/creating the visit based on seatingAreaId
-     // We just need to ensure a seating area is selected.
-     // A more robust approach would explicitly pass seatingAreaId and let backend manage visit lifecycle.
-
-     // Let's adjust the payload slightly for clarity on the backend
-     const payload = {
-        seatingAreaId: selectedArea.id, // Send area ID
+     const payload: AcaiaSalePayload = { // Ensure payload matches interface
+        seatingAreaId: selectedArea.id,
         cart: cart.map(item => ({
             productId: item.product.id,
             quantity: item.quantity,
@@ -149,13 +148,13 @@ function PosClientPage() {
      };
 
     try {
-      const response = await fetch("/api/sales", { // Call the modified sales endpoint
+      const response = await fetch("/api/sales", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
-      const result: ApiResponse = await response.json(); // Expecting simple success/error
+      const result: ApiResponse = await response.json();
       if (!response.ok) {
           throw new Error(result.error || "Falha ao registrar pedido");
       }
@@ -165,8 +164,9 @@ function PosClientPage() {
         message: `Pedido para ${selectedArea.name} enviado com sucesso.`,
         color: "green",
       });
-      resetOrder(); // Clear the form after successful submission
-      // Might need to trigger a refetch of seating areas if occupancy status changed
+      resetOrder();
+      // TODO: Consider triggering a refetch of seating areas to update occupancy status in the selector
+      // Maybe add a refresh function prop to SeatingAreaSelector? For MVP, manual refresh is okay.
     } catch (error: any) {
       notifications.show({
         title: "Erro ao Enviar Pedido",
@@ -175,21 +175,20 @@ function PosClientPage() {
       });
     } finally {
       setLoadingSubmit(false);
-      closeSubmitModal(); // Close modal regardless of success/error
+      closeSubmitModal();
     }
   };
 
 
-  // Determine client name for display
-  const clientName = activeVisit?.client?.name || (activeVisit ? `Cliente Anônimo (Visita #${activeVisit.id})` : "Nenhum cliente ativo");
+  // Determine client name from the simplified activeVisitInfo
+  const clientName = activeVisitInfo?.client?.name || (activeVisitInfo ? `Cliente Anônimo (Visita #${activeVisitInfo.id})` : "Nenhum cliente ativo");
 
   return (
     <>
-      {/* Reusing/Renaming CheckoutModal */}
       <SubmitOrderModal
         opened={submitModal}
         onClose={closeSubmitModal}
-        onSubmit={handleSubmitOrder} // Pass the submit handler
+        onSubmit={handleSubmitOrder}
         seatingAreaName={selectedArea?.name || ''}
         clientName={clientName}
         cart={cart}
@@ -208,10 +207,11 @@ function PosClientPage() {
                   <MapPin size={24} />
                   <Title order={4}>1. Selecionar Mesa / Área</Title>
               </Group>
+              {/* Ensure SeatingAreaSelector's onSelect prop type matches handleSelectArea */}
               <SeatingAreaSelector
                 selectedAreaId={selectedArea?.id || null}
                 onSelect={handleSelectArea}
-                disabled={loadingProducts} // Disable while products load? Maybe not necessary
+                disabled={loadingProducts}
               />
                {selectedArea && (
                   <Text size="sm" c="dimmed">
@@ -225,7 +225,7 @@ function PosClientPage() {
                   <Title order={4}>2. Adicionar Produtos</Title>
               </Group>
               <ProductSelector
-                products={products} // Use fetched products
+                products={products}
                 loading={loadingProducts}
                 onAddProduct={(product) => {
                   setCart((currentCart) => {
@@ -275,14 +275,14 @@ function PosClientPage() {
                     <Text size="xl" fw={700}>
                       Total:
                     </Text>
-                    <Text size="xl" fw={700} c="pastelGreen.9"> {/* Use theme color */}
+                    <Text size="xl" fw={700} c="pastelGreen.9">
                       R$ {cartTotal.toFixed(2)}
                     </Text>
                   </Group>
                   <Button
-                    color="green" // Or use theme color: color="pastelGreen"
+                    color="green"
                     size="lg"
-                    leftSection={<Send size={20} />} // Changed icon
+                    leftSection={<Send size={20} />}
                     onClick={openSubmitModal}
                     disabled={
                       !selectedArea || cart.length === 0 || loadingSubmit

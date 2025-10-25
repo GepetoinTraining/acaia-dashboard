@@ -2,10 +2,15 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { Select, Loader, ComboboxItem, Group, Text, Badge } from '@mantine/core';
-import { ApiResponse, SeatingAreaWithVisitInfo } from '@/lib/types'; // Adjust path if needed
+// --- FIX: Import ComboboxLikeRenderOptionInput type ---
+import { Select, Loader, ComboboxItem, Group, Text, Badge, ComboboxLikeRenderOptionInput } from '@mantine/core';
+import { ApiResponse, SeatingAreaWithVisitInfo } from '@/lib/types';
 import { notifications } from '@mantine/notifications';
-import { Armchair } from 'lucide-react'; // Icon
+import { Armchair } from 'lucide-react';
+import { Client, Visit, SeatingArea } from '@prisma/client'; // Import base types if needed
+
+// Type for the items in the Select dropdown, extending Mantine's base type
+type SelectItem = ComboboxItem & { area: SeatingAreaWithVisitInfo };
 
 type SeatingAreaSelectorProps = {
     selectedAreaId: number | null;
@@ -13,8 +18,6 @@ type SeatingAreaSelectorProps = {
     disabled?: boolean;
 };
 
-// Type for the items in the Select dropdown
-type SelectItem = ComboboxItem & { area: SeatingAreaWithVisitInfo };
 
 export function SeatingAreaSelector({ selectedAreaId, onSelect, disabled }: SeatingAreaSelectorProps) {
     const [areas, setAreas] = useState<SeatingAreaWithVisitInfo[]>([]);
@@ -25,8 +28,7 @@ export function SeatingAreaSelector({ selectedAreaId, onSelect, disabled }: Seat
         const fetchAreas = async () => {
             setLoading(true);
             try {
-                // Fetch only active areas with visit info for the selector
-                const response = await fetch('/api/seating-areas'); // Default fetches active=true
+                const response = await fetch('/api/seating-areas');
                 if (!response.ok) throw new Error('Falha ao buscar mesas/áreas');
                 const result: ApiResponse<SeatingAreaWithVisitInfo[]> = await response.json();
                 if (result.success && result.data) {
@@ -48,11 +50,11 @@ export function SeatingAreaSelector({ selectedAreaId, onSelect, disabled }: Seat
         fetchAreas();
     }, []); // Fetch only once on mount
 
-    // Prepare data for the Select component
+    // Prepare data for the Select component, ensuring it includes the 'area' property
     const selectData: SelectItem[] = areas.map((area) => ({
         value: area.id.toString(),
-        label: area.name, // The text displayed in the input after selection
-        area: area, // Store the full area object
+        label: area.name,
+        area: area, // Include the full area object
     }));
 
     // Handle selection change
@@ -61,18 +63,23 @@ export function SeatingAreaSelector({ selectedAreaId, onSelect, disabled }: Seat
             onSelect(null);
             return;
         }
-        const selected = selectData.find((item) => item.value === value)?.area;
-        onSelect(selected || null);
+        // Find the corresponding SelectItem based on value
+        const selectedItem = selectData.find((item) => item.value === value);
+        onSelect(selectedItem?.area || null); // Pass the 'area' object
     };
 
+    // --- FIX: Correct function signature and access option via item.option ---
     // Custom rendering for dropdown options
-    const renderSelectOption = ({ option }: { option: SelectItem }) => {
-        const isOccupied = option.area.visits && option.area.visits.length > 0;
-        const clientName = isOccupied ? (option.area.visits[0]?.client?.name || `Cliente #${option.area.visits[0]?.clientId || '?'}`) : null;
+    const renderSelectOption = (item: ComboboxLikeRenderOptionInput<SelectItem>) => {
+        // Access our custom 'area' property via item.option.area
+        const areaData = item.option.area;
+        const isOccupied = areaData.visits && areaData.visits.length > 0;
+        const clientName = isOccupied ? (areaData.visits[0]?.client?.name || `Cliente #${areaData.visits[0]?.clientId || '?'}`) : null;
 
         return (
-            <Group justify="space-between" wrap="nowrap">
-                <Text>{option.label}</Text>
+            <Group key={item.option.value} justify="space-between" wrap="nowrap">
+                {/* Use item.option.label for the display label */}
+                <Text>{item.option.label}</Text>
                 {isOccupied ? (
                     <Badge color="red" size="sm" variant="light" >
                         Ocupada ({clientName})
@@ -85,19 +92,20 @@ export function SeatingAreaSelector({ selectedAreaId, onSelect, disabled }: Seat
             </Group>
         );
     };
+    // --- End Fix ---
 
     return (
         <Select
             label="Mesa / Área"
             placeholder={loading ? 'Carregando áreas...' : 'Selecione uma área'}
-            data={selectData}
+            data={selectData} // Pass our extended SelectItem array
             value={selectedAreaId?.toString() || null}
             onChange={handleChange}
             searchable
             clearable
             disabled={loading || disabled}
             nothingFoundMessage="Nenhuma área encontrada"
-            renderOption={renderSelectOption} // Use custom renderer
+            renderOption={renderSelectOption} // Use the corrected renderer
             leftSection={loading ? <Loader size="xs" /> : <Armchair size={16} />}
         />
     );

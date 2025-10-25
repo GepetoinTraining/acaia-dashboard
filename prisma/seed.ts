@@ -1,80 +1,79 @@
-import { PrismaClient, StaffRole } from '@prisma/client';
+// In prisma/seed.ts
+import { PrismaClient, StaffRole, SeatingAreaType } from '@prisma/client';
 import { hash } from 'bcryptjs';
-
-// This script will be run with `npx prisma db seed`
-// It creates a default Admin user so you can log in
-// and populates the essential 'Environments' table.
+import { randomBytes } from 'crypto'; // For generating tokens
 
 const prisma = new PrismaClient();
 
-async function main() {
-  console.log('Start seeding ...');
+// Helper to generate a unique token
+function generateUniqueToken(length = 10) {
+  return randomBytes(length).toString('hex');
+}
 
-  const defaultPin = '1234';
+async function main() {
+  console.log('Start seeding Acaia data...');
+
+  // --- Staff ---
+  const defaultPin = '1234'; // Keep simple for demo
   const hashedPin = await hash(defaultPin, 12);
 
-  // Create a default admin staff user
-  // We use `upsert` to avoid errors if you run `db seed` multiple times.
-  // Note: We use a *plain text* unique identifier (like 'admin-user') 
-  // for the `where` clause, NOT the hashed PIN.
-  const adminUser = await prisma.staff.upsert({
-    where: { name: 'Admin' }, // Use a stable, unique field
-    update: {
-      pinCode: hashedPin, // Update the PIN in case it changed
-    },
+  const managerUser = await prisma.staff.upsert({
+    where: { name: 'Manager' }, // Use name as unique identifier for upsert
+    update: { pinCode: hashedPin, defaultRole: StaffRole.Manager }, // Ensure role is Manager
     create: {
-      name: 'Admin',
-      defaultRole: StaffRole.Cashier, // Admin/Cashier has all rights for now
+      name: 'Manager',
+      defaultRole: StaffRole.Manager, // Assign Manager role
       pinCode: hashedPin,
       isActive: true,
     },
   });
+  console.log(`Created/updated manager user: ${managerUser.name} (PIN: ${defaultPin})`);
 
-  console.log(`Created/updated admin user: ${adminUser.name}`);
-  console.log(`Login PIN: ${defaultPin}`);
+  // --- Seating Areas ---
+  const seatingAreasData = [
+    { name: 'Table 1 (T1)', capacity: 4, type: SeatingAreaType.TABLE, reservationCost: 10.00, qrCodeToken: generateUniqueToken() },
+    { name: 'Table 2 (T2)', capacity: 4, type: SeatingAreaType.TABLE, reservationCost: 10.00, qrCodeToken: generateUniqueToken() },
+    { name: 'Bar Seat 1 (B1)', capacity: 1, type: SeatingAreaType.BAR_SEAT, reservationCost: 0, qrCodeToken: generateUniqueToken() },
+    { name: 'Lounge Couch A', capacity: 6, type: SeatingAreaType.LOUNGE_SEAT, reservationCost: 25.00, qrCodeToken: generateUniqueToken() },
+    { name: 'DJ Booth', capacity: 2, type: SeatingAreaType.DJ_BOOTH, reservationCost: 0, qrCodeToken: generateUniqueToken(), isActive: false }, // DJ Booth itself might not be assignable to visits initially
+  ];
 
-  // --- Seed Environments based on photos ---
-  const lounge = await prisma.environment.upsert({
-    where: { name: 'Main Lounge' },
-    update: {},
-    create: {
-      name: 'Main Lounge',
-      type: 'Public',
-      capacity: 20,
-    },
+  console.log('Creating/updating Seating Areas...');
+  for (const area of seatingAreasData) {
+    const createdArea = await prisma.seatingArea.upsert({
+      where: { name: area.name },
+      update: { capacity: area.capacity, type: area.type, reservationCost: area.reservationCost, isActive: area.isActive },
+      create: area,
+    });
+    console.log(`- ${createdArea.name} (Token: ${createdArea.qrCodeToken})`);
+  }
+
+  // --- Vinyl Record ---
+  const vinylRecord = await prisma.vinylRecord.upsert({
+      where: { artist_title: { artist: "Example Artist", title: "Example Album" } }, // Use composite unique key
+      update: {},
+      create: {
+          artist: "Example Artist",
+          title: "Example Album",
+          genre: "Example Genre",
+          year: 2024,
+      },
   });
+  console.log(`Created/updated vinyl record: ${vinylRecord.artist} - ${vinylRecord.title}`);
 
-  const poolside = await prisma.environment.upsert({
-    where: { name: 'Poolside' },
-    update: {},
-    create: {
-      name: 'Poolside',
-      type: 'Public',
-      capacity: 15,
-    },
+  // --- Entertainer ---
+  const entertainer = await prisma.entertainer.upsert({
+      where: { name: "DJ Example" }, // Assuming name is unique enough for seeding
+      update: {},
+      create: {
+          name: "DJ Example",
+          type: "DJ",
+          contactNotes: "Plays on Fridays.",
+      },
   });
+  console.log(`Created/updated entertainer: ${entertainer.name}`);
 
-  const patio = await prisma.environment.upsert({
-    where: { name: 'Patio' },
-    update: {},
-    create: {
-      name: 'Patio',
-      type: 'Public',
-      capacity: 10,
-    },
-  });
-  
-  const vip1 = await prisma.environment.upsert({
-    where: { name: 'VIP Lounge 1' },
-    update: {},
-    create: {
-      name: 'VIP Lounge 1',
-      type: 'VIP',
-      capacity: 8,
-    },
-  });
 
-  console.log(`Created/updated environments: ${lounge.name}, ${poolside.name}, ${patio.name}, ${vip1.name}`);
   console.log('Seeding finished.');
 }
 
@@ -86,4 +85,3 @@ main()
   .finally(async () => {
     await prisma.$disconnect();
   });
-

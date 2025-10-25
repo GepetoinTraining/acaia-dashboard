@@ -32,15 +32,17 @@ export function CreateStaffModal({
   const form = useForm({
     initialValues: {
       name: "",
-      role: StaffRole.Server,
+      role: StaffRole.Server, // Adjust default role if needed for Acaia
       pin: "",
     },
     validate: {
       name: (value) => (value.trim().length < 2 ? "Nome inválido" : null),
+      // --- CHANGE THIS LINE ---
       pin: (value) =>
-        /^\d{4,10}$/.test(value)
+        /^\d{6}$/.test(value) // Exactly 6 digits
           ? null
-          : "PIN deve conter de 4 a 10 dígitos",
+          : "PIN deve conter exatamente 6 dígitos", // Update error message
+      // --- END CHANGE ---
       role: (value) => (Object.values(StaffRole).includes(value) ? null : "Cargo inválido"),
     },
   });
@@ -105,12 +107,13 @@ export function CreateStaffModal({
             {...form.getInputProps("role")}
           />
           <PasswordInput
-            required
-            label="PIN de Acesso"
-            placeholder="4 a 10 dígitos"
-            leftSection={<KeyRound size={16} />}
-            {...form.getInputProps("pin")}
-          />
+        required
+        label="PIN de Acesso"
+        placeholder="6 dígitos" // Update placeholder
+        leftSection={<KeyRound size={16} />}
+        {...form.getInputProps("pin")}
+        maxLength={6} // Add maxLength for better UX
+      />
           <Button
             type="submit"
             mt="md"

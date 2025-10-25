@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { ApiResponse, SeatingAreaWithVisitInfo } from "@/lib/types"; // Updated import
 import { NextRequest, NextResponse } from "next/server";
-import { SeatingArea, SeatingAreaType, Prisma } from "@prisma/client";
+import { SeatingArea, SeatingAreaType, Prisma, StaffRole } from "@prisma/client"; // Added StaffRole
 import { randomBytes } from "crypto";
 
 // Helper to generate a unique token
@@ -72,12 +72,12 @@ export async function GET(req: NextRequest) {
 /**
  * POST /api/seating-areas
  * Creates a new seating area.
- * Requires Admin/Manager role (TODO: Implement role check)
+ * Requires Admin/Manager role.
  */
 export async function POST(req: NextRequest) {
     const session = await getSession();
-    // TODO: Add stricter role check (Manager/Admin)
-    if (!session.staff?.isLoggedIn || (session.staff.role !== 'Admin' && session.staff.role !== 'Manager')) {
+    // Stricter role check
+    if (!session.staff?.isLoggedIn || (session.staff.role !== StaffRole.Admin && session.staff.role !== StaffRole.Manager)) {
         return NextResponse.json<ApiResponse>(
             { success: false, error: "Não autorizado (Admin/Manager required)" },
             { status: 403 }
@@ -136,12 +136,21 @@ export async function POST(req: NextRequest) {
 
     } catch (error: any) {
         console.error("POST /api/seating-areas error:", error);
-         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002' && error.meta?.target?.includes('name')) {
-             return NextResponse.json<ApiResponse>({ success: false, error: "Já existe uma área com este nome." }, { status: 409 });
-         }
-         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002' && error.meta?.target?.includes('qrCodeToken')) {
-             // Highly unlikely, but handle token collision just in case
-             return NextResponse.json<ApiResponse>({ success: false, error: "Falha ao gerar token QR único. Tente novamente." }, { status: 500 });
+         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+             // --- FIX STARTS HERE ---
+             const target = error.meta?.target;
+             const isNameError = Array.isArray(target) && target.includes('name');
+             const isTokenError = Array.isArray(target) && target.includes('qrCodeToken');
+             // --- FIX ENDS HERE ---
+
+             if (isNameError) {
+                 return NextResponse.json<ApiResponse>({ success: false, error: "Já existe uma área com este nome." }, { status: 409 });
+             }
+             if (isTokenError) {
+                 // Highly unlikely, but handle token collision just in case
+                 return NextResponse.json<ApiResponse>({ success: false, error: "Falha ao gerar token QR único. Tente novamente." }, { status: 500 });
+             }
+             // Handle other P2002 errors if necessary
          }
         return NextResponse.json<ApiResponse>({ success: false, error: "Erro ao criar área de assento." }, { status: 500 });
     }

@@ -1,11 +1,9 @@
 // File: app/api/reports/route.ts
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-// --- FIX: Import ReportData, ProductLeaderboardItem ---
 import { ApiResponse, ReportData, ProductLeaderboardItem } from "@/lib/types";
 import { NextRequest, NextResponse } from "next/server";
 import dayjs from "dayjs";
-// --- FIX: Import StaffRole for check, Product for lookup ---
 import { Prisma, StaffRole, Product } from "@prisma/client";
 
 /**
@@ -15,11 +13,10 @@ import { Prisma, StaffRole, Product } from "@prisma/client";
  */
 export async function GET(req: NextRequest) {
   const session = await getSession();
-  // --- FIX: Use StaffRole for check ---
   if (!session.staff?.isLoggedIn || session.staff.role !== StaffRole.Admin) {
     return NextResponse.json<ApiResponse>(
       { success: false, error: "Não autorizado (Admin required)" },
-      { status: 403 } // Use Forbidden
+      { status: 403 }
     );
   }
 
@@ -28,17 +25,17 @@ export async function GET(req: NextRequest) {
 
     // --- 1. KPIs ---
     const totalSalesData = await prisma.sale.aggregate({
-      _sum: { totalAmount: true }, // Use totalAmount from Sale model
+      _sum: { totalAmount: true },
       _count: { id: true },
       where: {
-        createdAt: { gte: thirtyDaysAgo }, // Aggregate based on the date range
+        createdAt: { gte: thirtyDaysAgo },
       },
     });
     const newClients = await prisma.client.count({
       where: { createdAt: { gte: thirtyDaysAgo } },
     });
 
-    const totalRevenue = Number(totalSalesData._sum.totalAmount || 0); // Use totalAmount
+    const totalRevenue = Number(totalSalesData._sum.totalAmount || 0);
     const totalSales = totalSalesData._count.id;
     const avgSaleValue = totalRevenue / (totalSales || 1);
 
@@ -50,52 +47,40 @@ export async function GET(req: NextRequest) {
     };
 
     // --- 2. Sales by Day (Chart) ---
-    const salesByDayRaw = await prisma.sale.groupBy({
-      // Group by the date part of createdAt
-      by: [Prisma.sql`DATE("createdAt")`], // Use SQL function for date grouping
-      _sum: {
-        totalAmount: true, // Sum totalAmount
-      },
-      where: {
-        createdAt: { gte: thirtyDaysAgo },
-      },
-      orderBy: {
-        // Order by the same date grouping
-         _sum: { createdAt: "asc" }, // Order by the date itself
-      },
+    // --- FIX: Fetch raw sales data first ---
+    const salesRaw = await prisma.sale.findMany({
+        where: {
+            createdAt: { gte: thirtyDaysAgo },
+        },
+        select: {
+            createdAt: true,
+            totalAmount: true, // Select totalAmount
+        },
+        orderBy: {
+            createdAt: "asc",
+        },
+    });
+
+    // --- FIX: Aggregate by day in application code ---
+    const salesMap = new Map<string, number>();
+    salesRaw.forEach((sale) => {
+        const date = dayjs(sale.createdAt).format("DD/MM/YYYY");
+        const currentSales = salesMap.get(date) || 0;
+        // Convert Decimal totalAmount to Number before adding
+        const saleAmount = Number(sale.totalAmount || 0);
+        salesMap.set(date, currentSales + saleAmount);
     });
 
     // Format for chart
-    const salesOverTime: ReportData["salesOverTime"] = salesByDayRaw.map((saleGroup: any) => {
-        // The date comes back differently depending on DB when using SQL functions
-        const dateKey = saleGroup['date'] || saleGroup['DATE("createdAt")']; // Adjust based on actual key
-        const date = dayjs(dateKey).format("DD/MM/YYYY");
-        const revenue = Number(saleGroup._sum.totalAmount || 0);
-        return {
-            date: date,
-            Revenue: parseFloat(revenue.toFixed(2)), // Ensure 2 decimal places
-        };
-    }).sort((a, b) => dayjs(a.date, "DD/MM/YYYY").unix() - dayjs(b.date, "DD/MM/YYYY").unix()); // Ensure sorted by date string
+    const salesOverTime: ReportData["salesOverTime"] = Array.from(
+        salesMap.entries()
+    ).map(([date, sales]) => ({
+        date: date,
+        Revenue: parseFloat(sales.toFixed(2)), // Use 'Revenue', ensure 2 decimals
+    })).sort((a, b) => dayjs(a.date, "DD/MM/YYYY").unix() - dayjs(b.date, "DD/MM/YYYY").unix()); // Ensure sorted
 
-    // --- 3. Top Hostesses (REMOVED BLOCK) ---
-    /*
-    const topHostessesRaw = await prisma.sale.groupBy({
-      by: ["hostId"], // THIS FIELD DOES NOT EXIST
-      _sum: {
-        priceAtSale: true,
-      },
-      orderBy: {
-        _sum: {
-          priceAtSale: "desc",
-        },
-      },
-      take: 5,
-    });
-    // Fetching Host models is also removed
-    const hosts = await prisma.host.findMany({ ... });
-    const hostessLeaderboard: ReportData["hostessLeaderboard"] = ... ;
-    */
-    // --- END REMOVED BLOCK ---
+
+    // --- 3. Top Hostesses (REMOVED) ---
 
 
     // --- 4. Top Products (by Quantity Sold) ---
@@ -105,45 +90,40 @@ export async function GET(req: NextRequest) {
         quantity: true, // Sum the quantity sold
       },
       where: {
-         createdAt: { gte: thirtyDaysAgo }, // Filter by date range
+         createdAt: { gte: thirtyDaysAgo },
       },
       orderBy: {
         _sum: {
-          quantity: "desc", // Order by most units sold
+          quantity: "desc",
         },
       },
       take: 5,
     });
 
-    // --- FIX: Handle potential null productId ---
     const productIds = topProductsRaw
         .map((p) => p.productId)
-        .filter((id): id is number => id !== null); // Filter out nulls and type guard
+        .filter((id): id is number => id !== null);
 
     const products = await prisma.product.findMany({
-        where: { id: { in: productIds } }, // Use filtered IDs
-        select: { id: true, name: true } // Select only needed fields
+        where: { id: { in: productIds } },
+        select: { id: true, name: true }
     });
 
-    // --- FIX: Match ProductLeaderboardItem type ---
     const productLeaderboard: ReportData["productLeaderboard"] =
       topProductsRaw.map((p) => {
         const product = products.find((prod) => prod.id === p.productId);
         return {
-          productId: p.productId, // Include ID
+          productId: p.productId,
           name: product?.name || "Produto Deletado",
-          totalQuantitySold: Number(p._sum.quantity || 0), // Use quantity sum
+          totalQuantitySold: Number(p._sum.quantity || 0),
         };
-      // Filter out entries where product might be null if needed
       }).filter(p => p.productId !== null) as ProductLeaderboardItem[];
 
 
-    // --- Assemble Report Data (Excluding Hostess) ---
-    // --- FIX: Use correct field names and exclude hostessLeaderboard ---
+    // --- Assemble Report Data ---
     const data: ReportData = {
       kpis: kpis,
       salesOverTime: salesOverTime,
-      // hostessLeaderboard: [], // Removed entirely
       productLeaderboard: productLeaderboard,
     };
 

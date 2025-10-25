@@ -3,8 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { ApiResponse } from "@/lib/types";
 import { NextRequest, NextResponse } from "next/server";
-// --- FIX: Import BatchPayload ---
-import { Prisma, Sale, StaffRole, ClientStatus, Visit, Client, SeatingArea, StockMovementType, Product, InventoryItem, BatchPayload } from "@prisma/client";
+// --- FIX: Removed BatchPayload from direct import ---
+import { Prisma, Sale, StaffRole, ClientStatus, Visit, Client, SeatingArea, StockMovementType, Product, InventoryItem } from "@prisma/client";
 
 // Define expected payload shape directly
 interface AcaiaSalePayload {
@@ -194,7 +194,7 @@ export async function POST(req: NextRequest) {
         const transactionResults = await prisma.$transaction(transactionPromises);
 
         // --- 5. Return Success ---
-         // --- FIX: Cast the first result to BatchPayload ---
+         // --- FIX: Use Prisma.BatchPayload for the cast ---
          const createdSalesResult = transactionResults[0] as Prisma.BatchPayload;
          const salesCount = createdSalesResult?.count ?? 0;
          // --- End Fix ---

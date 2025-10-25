@@ -1,63 +1,67 @@
+// File: app/dashboard/components/LiveMap.tsx (Simplified for Acaia MVP)
 "use client";
 
-import { SimpleGrid, Paper, Title, Stack, Text } from "@mantine/core";
-import { LiveClient, LiveHostess } from "@/lib/types";
-import { LiveClientCard } from "./LiveClientCard";
-import { LiveHostessCard } from "./LiveHostessCard";
+import { SimpleGrid, Paper, Title, Stack, Text, Group } from "@mantine/core";
+import { LiveClient } from "@/lib/types"; // Removed LiveHostess
+import { LiveClientCard } from "./LiveClientCard"; // Removed LiveHostessCard import
+import { SeatingArea } from "@prisma/client"; // Import SeatingArea if showing tables
 
-type LiveMapProps = {
-  clients: LiveClient[];
-  hostesses: LiveHostess[];
+// Define the shape of the data coming from the API (including the nested visit info)
+type SeatingAreaWithVisit = SeatingArea & {
+  visits: (Visit & { client: Client | null })[];
 };
 
-// This component simulates the "environments" we modeled.
-// A real app would get these from the `environments` table.
-const ENVIRONMENTS = [
-  { id: 1, name: "Main Lounge" },
-  { id: 2, name: "Poolside" },
-  { id: 3, name: "Patio" },
-  { id: 4, name: "VIP Lounge 1" },
-];
+type LiveMapProps = {
+  // Pass active visits/clients, maybe areas too
+  activeVisits: LiveClient[]; // Using the simplified LiveClient type
+  // seatingAreas?: SeatingAreaWithVisit[]; // Optional: Pass areas to show occupancy map
+};
 
-export function LiveMap({ clients, hostesses }: LiveMapProps) {
-  // In a real app, clients and hostesses would have a `current_environment_id`.
-  // For this demo, we'll just show them in grouped lists.
+
+export function LiveMap({ activeVisits }: LiveMapProps) {
+
+  // Group visits by seatingAreaId for display (Optional Enhancement)
+  const visitsByArea: { [key: number]: LiveClient[] } = {};
+  const unassignedVisits: LiveClient[] = [];
+
+  activeVisits.forEach(visit => {
+      if (visit.seatingAreaId) {
+          if (!visitsByArea[visit.seatingAreaId]) {
+              visitsByArea[visit.seatingAreaId] = [];
+          }
+          visitsByArea[visit.seatingAreaId].push(visit);
+      } else {
+          unassignedVisits.push(visit);
+      }
+  });
+
 
   return (
-    <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="md">
-      {/* Column 1: Live Clients */}
-      <Paper withBorder p="md" radius="md">
-        <Title order={4}>Clientes Ativos ({clients.length})</Title>
-        <Text size="sm" c="dimmed" mb="md">
-          Clientes que estão na casa com um check-in ativo.
-        </Text>
-        <Stack>
-          {clients.length > 0 ? (
-            clients.map((client) => (
-              <LiveClientCard key={client.visitId} client={client} />
-            ))
-          ) : (
-            <Text c="dimmed">Nenhum cliente na casa.</Text>
-          )}
-        </Stack>
-      </Paper>
+    <Paper withBorder p="md" radius="md">
+      <Title order={4}>Clientes Ativos ({activeVisits.length})</Title>
+      <Text size="sm" c="dimmed" mb="md">
+        Clientes que estão na casa com um check-in ativo.
+      </Text>
+      <Stack>
+        {activeVisits.length > 0 ? (
+          activeVisits.map((client) => (
+            // LiveClientCard might need adjustment if credit was removed from LiveClient type
+            <Paper key={client.visitId} p="xs" withBorder radius="sm">
+                <Group justify="space-between">
+                    <Text size="sm" fw={500}>{client.name || `Visita #${client.visitId}`}</Text>
+                    {client.seatingAreaName && <Badge size="sm">{client.seatingAreaName}</Badge>}
+                </Group>
+            </Paper>
+            // Replace above Paper with updated LiveClientCard if preferred
+            // <LiveClientCard key={client.visitId} client={client} />
+          ))
+        ) : (
+          <Text c="dimmed">Nenhum cliente na casa.</Text>
+        )}
+      </Stack>
+      {/* Add logic here to display occupied tables based on visitsByArea if needed */}
+    </Paper>
 
-      {/* Column 2: Live Hostesses */}
-      <Paper withBorder p="md" radius="md">
-        <Title order={4}>Hostesses Disponíveis ({hostesses.length})</Title>
-        <Text size="sm" c="dimmed" mb="md">
-          Hostesses com check-in e status "Disponível".
-        </Text>
-        <Stack>
-          {hostesses.length > 0 ? (
-            hostesses.map((hostess) => (
-              <LiveHostessCard key={hostess.shiftId} hostess={hostess} />
-            ))
-          ) : (
-            <Text c="dimmed">Nenhuma hostess disponível.</Text>
-          )}
-        </Stack>
-      </Paper>
-    </SimpleGrid>
+    // Removed the second column for Hostesses
   );
 }

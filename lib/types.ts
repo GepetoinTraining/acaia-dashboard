@@ -1,17 +1,21 @@
+// File: lib/types.ts
 import {
   Client,
-  Environment,
-  Host,
-  HostShift,
+  // Environment, // Removed
+  // Host, // Removed
+  // HostShift, // Removed
   Partner,
-  PartnerPayout,
+  // PartnerPayout, // Removed for MVP
   Product,
-  PromotionBulletin,
+  // PromotionBulletin, // Removed for MVP
   Sale,
   Staff,
   StaffCommission,
   Visit ,
   StaffShift,
+  SeatingArea, // Added
+  Entertainer, // Added
+  VinylRecord, // Added
   Prisma
 } from "@prisma/client";
 
@@ -21,10 +25,10 @@ import {
 export type StaffSession = {
   id: number;
   name: string;
-  role: string;
+  role: string; // Keep as string, maps to StaffRole enum
   isLoggedIn: true;
-  shiftId?: number; // Added shiftId based on sales route usage
-  pin?: string; // Added pin based on sales route usage (admin check)
+  shiftId?: number; // Keep potentially for shift tracking
+  pin?: string; // Keep for session validation if needed elsewhere
 };
 
 // ---
@@ -33,30 +37,28 @@ export type StaffSession = {
 export type ApiResponse<T = unknown> = {
   success: boolean;
   data?: T;
-  error?: string; // This is the fix for the build error
-  message?: string; // Added based on auth route usage
+  error?: string;
+  message?: string;
 };
 
 // ---
-// 3. STAFF TAB
+// 3. STAFF TAB (Keep)
 // ---
 export type StaffWithShifts = Staff & {
   shifts: StaffShift[];
 };
 
 // ---
-// 4. CLIENTS TAB
+// 4. CLIENTS TAB (Keep, simplify relations if needed)
 // ---
-export type ClientWithVisits = Client & {
-  visits: Visit[];
-  _count: {
-    visits: number;
-  };
-};
+// Basic Client type from API list might not need deep relations
+// type ClientListItem = Omit<Client, 'crmData'>; // Example if needed
 
+// Detailed Client type including visits and sales (keep for detail page)
 export type ClientDetails = Client & {
   visits: (Visit & {
-    sales: (Sale & { product: Product, host: Host | null })[]; // Added host to sales
+    sales: (Sale & { product: Product })[]; // Removed host from sales
+    seatingArea: SeatingArea | null; // Added SeatingArea relationship
   })[];
   _count: {
     visits: number;
@@ -64,118 +66,125 @@ export type ClientDetails = Client & {
 };
 // Alias for ClientDetailPage usage
 export type ClientWithDetails = ClientDetails;
-// Alias for ClientVisitHistory usage
-export type VisitWithSales = ClientDetails['visits'][number];
+// Alias for ClientVisitHistory usage (Update if structure changed)
+export type VisitWithSalesAndArea = ClientDetails['visits'][number]; // Renamed for clarity
 
 
 // ---
-// 5. HOSTESSES TAB
+// 5. HOSTESSES TAB (Removed)
 // ---
-export type HostessWithShifts = Host & {
-  shifts: HostShift[];
-};
+// Removed HostessWithShifts type
+
 
 // ---
-// 6. PROMOTIONS TAB
+// 6. PROMOTIONS TAB (Removed for MVP)
 // ---
-export type PromotionWithProduct = PromotionBulletin & {
-  product: Product | null;
-};
+// Removed PromotionWithProduct type
+
 
 // ---
-// 7. INVENTORY (BAR) TAB
+// 7. INVENTORY (BAR) TAB (Keep)
 // ---
 export type AggregatedStock = {
   inventoryItemId: number;
   name: string;
-  smallestUnit: string;
-  totalStock: number; // Renamed from currentStock based on inventory route
+  smallestUnit: string; // Should map to UnitOfMeasure enum
+  totalStock: number;
   reorderThreshold: number | null;
 };
 
 
 // ---
-// 8. LIVE DATA (POS & LIVE MAP)
+// 8. LIVE DATA (Simplified for MVP / Refactoring Needed)
 // ---
+// These types might be deprecated or need significant rework as Hostesses are removed
+// and LiveClient definition changes (no credit).
+
+// Kept for potential use in listing active clients, but credit removed
 export type LiveClient = {
   visitId: number;
-  clientId: number;
-  name: string;
-  consumableCreditRemaining: number; // Changed back to number based on CheckoutModal usage
+  clientId: number | null; // Client ID might be null initially
+  name: string | null; // Name might be null
+  // consumableCreditRemaining: number; // Removed credit system
+  seatingAreaId?: number | null; // Add seating area if needed
+  seatingAreaName?: string | null; // Add seating area name if needed
 };
 
-export type LiveHostess = {
-  shiftId: number;
-  hostId: number;
-  stageName: string;
-};
+// REMOVED LiveHostess type
 
+// LiveData needs updating to reflect changes
 export type LiveData = {
-  clients: LiveClient[];
-  hostesses: LiveHostess[];
-  products: Product[];
+  // clients: LiveClient[]; // Keep or refactor based on needs
+  // hostesses: LiveHostess[]; // Removed
+  products: Product[]; // Keep for ProductSelector
+  seatingAreas?: SeatingAreaWithVisit[]; // Add seating areas if fetched here
 };
 
-// Cart Item for POS page
+// Type for API endpoint fetching seating areas with occupancy
+export type SeatingAreaWithVisit = SeatingArea & {
+  visits: (Visit & { client: { name: string | null } | null })[];
+};
+
+
+// Cart Item for POS page (Keep)
 export type CartItem = {
   product: Product;
   quantity: number;
 };
 
-// *** ADDED THIS TYPE ***
-export type SalePayload = {
-  visitId: number;
-  hostId: number;
+// Simplified SalePayload for Acaia MVP
+export interface AcaiaSalePayload {
+  seatingAreaId: number; // Use SeatingArea ID
   cart: {
     productId: number;
     quantity: number;
   }[];
-};
-// *** END OF ADDED TYPE ***
+  // staffId is added on the backend from session
+}
+// Removed old SalePayload type
+
 
 // ---
-// 9. FINANCIALS TAB
+// 9. FINANCIALS TAB (Simplified for MVP)
 // ---
-// Needed for StaffPayoutTable
+// StaffCommission detail (Keep)
 export type StaffCommissionWithDetails = StaffCommission & {
-  staff: { name: string };
+  staff: { name: string }; // Keep relation minimal
   relatedSale: Sale | null;
   relatedClient: Client | null;
 };
 
-// Needed for PartnerPayoutTable
-export type PartnerPayoutWithDetails = PartnerPayout & {
-  partner: Partner;
-  sale: Sale & { product: Product };
-};
+// PartnerPayout detail (Removed for MVP)
+// Removed PartnerPayoutWithDetails type
 
-// FIX: Renamed this type alias to avoid conflict with model name
-export type HostessPayoutSummary = {
-  hostId: number;
-  stageName: string;
-  totalUnpaidCommissions: string | number; // Kept as string | number based on api route fix
-};
+// Hostess Payout Summary (Removed)
+// Removed HostessPayoutSummary type
 
 
+// FinancialsData simplified
 export type FinancialsData = {
-  staffCommissions: StaffCommissionWithDetails[]; // Use the detailed type
-  partnerPayouts: PartnerPayoutWithDetails[]; // Use the detailed type
-  hostessPayouts: HostessPayoutSummary[]; // Use the renamed type alias
-  // Removed staffPayouts as it was empty and staffCommissions covers it
+  staffCommissions: StaffCommissionWithDetails[];
+  // partnerPayouts: PartnerPayoutWithDetails[]; // Removed for MVP
+  // hostessPayouts: HostessPayoutSummary[]; // Removed
 };
 
 // ---
-// 10. REPORTS / BI TAB
+// 10. REPORTS / BI TAB (Keep - Hostess part will be empty/removed)
 // ---
 
-// Added based on reports route usage
+// Keep ReportStat
 export type ReportStat = { title: string; value: string };
-export type SalesDataPoint = { date: string; sales: number }; // Used 'sales' based on SalesChart component
-export type HostessLeaderboardItem = { hostId: number; stageName: string; totalSales: number };
-export type ProductLeaderboardItem = { productId: number; name: string; totalSold: number }; // Added totalSold based on Leaderboards component
+// Keep SalesDataPoint
+export type SalesDataPoint = { date: string; Revenue: number }; // Used Revenue based on route
+
+// Hostess Leaderboard Item (Will be unused, keep type for now to avoid breaking ReportData)
+export type HostessLeaderboardItem = { name: string; Sales: number };
+
+// Product Leaderboard Item (Update based on reports route if needed)
+export type ProductLeaderboardItem = { name: string; Sales: number }; // Kept 'Sales' based on route
 
 
-// FIX: Corrected ReportData structure based on reports route implementation
+// ReportData (Keep structure, Hostess part will be empty)
 export type ReportData = {
   kpis: {
     totalRevenue: number;
@@ -183,24 +192,17 @@ export type ReportData = {
     avgSaleValue: number;
     newClients: number;
   };
-  salesOverTime: { date: string; Revenue: number }[]; // Changed sales to Revenue based on route
-  hostessLeaderboard: { name: string; Sales: number }[]; // Changed totalSales to Sales based on route
-  productLeaderboard: { name: string; Sales: number }[]; // Changed totalSold to Sales based on route
+  salesOverTime: { date: string; Revenue: number }[];
+  hostessLeaderboard: HostessLeaderboardItem[]; // Will be empty array
+  productLeaderboard: ProductLeaderboardItem[];
 };
 
 
 // ---
-// 11. QR / CLIENT TOKEN
+// 11. QR / CLIENT TOKEN (Removed old types)
 // ---
-export type QrTokenPayload = {
-  token: string;
-  qrCodeUrl: string;
-  visitId?: number; // Added based on qr route usage
-  clientId?: number; // Added based on qr route usage
-};
+// Removed QrTokenPayload type
+// Removed ClientTokenPayload type
 
-// Added based on qr lib usage
-export type ClientTokenPayload = {
-  visitId: number;
-  clientId: number;
-};
+// Add types related to Seating Area QR if needed later (e.g., if token verification happens client-side)
+// No specific types needed just for the menu page URL structure.

@@ -1,7 +1,8 @@
+// File: app/dashboard/components/LiveClientCard.tsx
 "use client";
 
 import { Paper, Group, Text, Badge } from "@mantine/core";
-import { LiveClient } from "@/lib/types";
+import { LiveClient } from "@/lib/types"; // Import the correct type
 import { User } from "lucide-react";
 
 export function LiveClientCard({ client }: { client: LiveClient }) {
@@ -10,11 +11,19 @@ export function LiveClientCard({ client }: { client: LiveClient }) {
       <Group justify="space-between">
         <Group>
           <User size={18} />
-          <Text fw={500}>{client.name}</Text>
+          {/* Display client name or placeholder */}
+          <Text fw={500}>{client.name || `Visita #${client.visitId}`}</Text>
         </Group>
-        <Badge color="green" variant="light">
+        {/* --- FIX: Removed the Badge displaying credit --- */}
+        {/* <Badge color="green" variant="light">
           Crédito: R$ {client.consumableCreditRemaining.toFixed(2)}
-        </Badge>
+        </Badge> */}
+        {/* Optionally display Seating Area */}
+        {client.seatingAreaName && (
+             <Badge color="blue" variant="outline" size="sm">
+                 {client.seatingAreaName}
+             </Badge>
+        )}
       </Group>
     </Paper>
   );

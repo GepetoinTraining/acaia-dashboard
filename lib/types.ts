@@ -1,207 +1,119 @@
 // File: lib/types.ts
 import {
-    Client,
-    Partner,
-    Product,
-    Sale,
-    Staff,
-    StaffCommission,
-    Visit ,
-    StaffShift,
-    SeatingArea, // Added
-    Entertainer, // Added
-    VinylRecord, // Added
-    Prisma,
-    ClientStatus, // Added
-    InventoryItem, // Added
-    StockMovementType, // Added
-    UnitOfMeasure // Added
+    Client, Partner, Product as PrismaProduct, Sale, Staff, StaffCommission, Visit , StaffShift,
+    SeatingArea, Entertainer, VinylRecord, Prisma, ClientStatus, InventoryItem,
+    StockMovementType, UnitOfMeasure, ProductType, PrepStation // Added ProductType, PrepStation
 } from "@prisma/client";
 
-// ---
-// 1. SESSION & AUTH TYPES
-// ---
+// --- Client-side Product type with number prices ---
+// Type representing Product after Decimal fields are converted to numbers
+export type Product = Omit<PrismaProduct, 'costPrice' | 'salePrice' | 'deductionAmountInSmallestUnit'> & {
+    costPrice: number;
+    salePrice: number;
+    deductionAmountInSmallestUnit: number;
+    // Relations might also need serialization if they contain Decimals
+    inventoryItem: (Omit<InventoryItem, 'storageUnitSizeInSmallest' | 'reorderThresholdInSmallest' | 'createdAt'> & { // Added createdAt omission
+        storageUnitSizeInSmallest: number | null;
+        reorderThresholdInSmallest: number | null;
+        smallestUnit: UnitOfMeasure; // Ensure correct enum
+    }) | null;
+    partner: Partner | null;
+};
+
+// --- Cart Item for POS page (Uses Product with number prices) ---
+// --- FIX: Update CartItem to use the client-side Product type ---
+export type CartItem = {
+  product: Product; // Use the Product type defined above
+  quantity: number;
+};
+
+
+// --- SESSION & AUTH TYPES ---
 export type StaffSession = {
-    id: number;
-    name: string;
-    role: string; // Keep as string, maps to StaffRole enum
-    isLoggedIn: boolean; // Changed to boolean for clarity, always true if present
-    shiftId?: number; // Keep potentially for shift tracking
-    pin?: string; // Keep for session validation if needed elsewhere
+    id: number; name: string; role: string; isLoggedIn: boolean; shiftId?: number; pin?: string;
 };
 
-// ---
-// 2. API RESPONSE TYPES
-// ---
+// --- API RESPONSE ---
 export type ApiResponse<T = unknown> = {
-    success: boolean;
-    data?: T;
-    error?: string;
-    message?: string;
+    success: boolean; data?: T; error?: string; message?: string;
 };
 
-// ---
-// 3. STAFF TAB (Keep)
-// ---
-export type StaffWithShifts = Staff & {
-    shifts: StaffShift[];
-};
+// --- STAFF ---
+export type StaffWithShifts = Staff & { shifts: StaffShift[] };
 
-// ---
-// 4. CLIENTS TAB (Keep, simplify relations if needed)
-// ---
-// Detailed Client type including visits and sales (keep for detail page)
-// Adjusted Sale relation to include staff instead of host
+// --- CLIENTS ---
+// Updated Sale relation
 export type ClientDetails = Client & {
     visits: (Visit & {
-        seatingArea: SeatingArea | null; // Added SeatingArea relationship
+        seatingArea: SeatingArea | null;
         sales: (Sale & {
-             product: Product | null; // Product can be null if deleted
-             staff: { name: string } | null; // Staff who processed sale
+             product: PrismaProduct | null; // API might return PrismaProduct initially
+             staff: { name: string } | null;
         })[];
     })[];
-    _count: {
-        visits: number;
-    };
+    _count: { visits: number };
 };
-// Alias for ClientDetailPage usage
 export type ClientWithDetails = ClientDetails;
 
-// Alias for ClientVisitHistory usage
-// Updated to reflect nested structure and staff relation
+// Updated Sale relation
 export type VisitWithSalesAndArea = Visit & {
     seatingArea: SeatingArea | null;
     sales: (Sale & {
-         product: Product | null;
-         staff: { name: string } | null; // Changed from host to staff
+         product: PrismaProduct | null; // API might return PrismaProduct initially
+         staff: { name: string } | null;
     })[];
 };
 
-
-// ---
-// 5. HOSTESSES TAB (Removed)
-// ---
-
-
-// ---
-// 6. PROMOTIONS TAB (Removed for MVP)
-// ---
-
-
-// ---
-// 7. INVENTORY (BAR) TAB (Keep)
-// ---
+// --- INVENTORY ---
 export type AggregatedStock = {
-    inventoryItemId: number;
-    name: string;
-    smallestUnit: UnitOfMeasure; // Changed from string to enum type
-    totalStock: number; // Changed from currentStock
-    reorderThreshold: number | null;
+    inventoryItemId: number; name: string; smallestUnit: UnitOfMeasure;
+    totalStock: number; reorderThreshold: number | null;
 };
 
-
-// ---
-// 8. LIVE DATA (Simplified for MVP)
-// ---
-// Simplified LiveClient type (no credit)
+// --- LIVE DATA ---
 export type LiveClient = {
-    visitId: number;
-    clientId: number | null;
-    name: string | null;
-    seatingAreaId?: number | null;
-    seatingAreaName?: string | null;
+    visitId: number; clientId: number | null; name: string | null;
+    seatingAreaId?: number | null; seatingAreaName?: string | null;
 };
 
-// Type for API endpoint fetching seating areas with occupancy
 export type SeatingAreaWithVisit = SeatingArea & {
-    // visits array contains active visits for this area
-    visits: ({
-        id: number;
-        clientId: number | null;
-        client: { name: string | null } | null;
-    })[]; // Simplified visit info
+    visits: ({ id: number; clientId: number | null; client: { name: string | null } | null; })[];
 };
-// Alias needed by SeatingAreaSelector
 export type SeatingAreaWithVisitInfo = SeatingAreaWithVisit;
 
-
-// LiveData includes active clients and products for POS selector
 export type LiveData = {
-    // --- FIX: Added clients property back ---
     clients: LiveClient[];
-    products: Product[]; // Keep for ProductSelector
-    seatingAreas?: SeatingAreaWithVisit[]; // Keep optional for POS initial load maybe
+    products: Product[]; // API returns Product with number prices now
+    seatingAreas?: SeatingAreaWithVisit[];
 };
 
+// --- POS ---
+// AcaiaSalePayload defined inline in API route
 
-// ---
-// 9. CART & POS TYPES (Keep/Refactor)
-// ---
-// Cart Item for POS page
-export type CartItem = {
-    product: Product; // Product prices might be string initially if serialized
-    quantity: number;
-};
-
-// Simplified SalePayload for Acaia MVP (Defined inline in API route)
-// interface AcaiaSalePayload { ... }
-
-
-// ---
-// 10. FINANCIALS TAB (Simplified for MVP)
-// ---
-// StaffCommission detail
+// --- FINANCIALS ---
+// Updated relatedSale type
 export type StaffCommissionWithDetails = StaffCommission & {
     staff: { name: string };
-    relatedSale: (Sale & { product?: Product | null }) | null; // Include product in related sale
-    relatedClient: { name: string | null } | null; // Select client name
+    relatedSale: (Sale & { product?: PrismaProduct | null }) | null; // API might return PrismaProduct
+    relatedClient: { name: string | null } | null;
 };
 
-// Partner Payouts removed for MVP
-
-// Hostess Payouts removed for MVP
-
-
-// FinancialsData simplified
 export type FinancialsData = {
     staffCommissions: StaffCommissionWithDetails[];
-    // partnerPayouts removed
-    // hostessPayouts removed
 };
 
-// ---
-// 11. REPORTS / BI TAB (Simplified)
-// ---
-// ReportStat remains the same
+// --- REPORTS ---
 export type ReportStat = { title: string; value: string };
-// SalesDataPoint remains the same
 export type SalesDataPoint = { date: string; Revenue: number };
 
-// Hostess Leaderboard removed
-
-// Product Leaderboard Item (Simplified - using Sale data directly in API)
 export type ProductLeaderboardItem = {
-    productId: number;
+    productId: number | null; // Allow null from groupBy
     name: string;
-    totalQuantitySold: number; // Based on quantity
-    // totalRevenueGenerated: number; // Or based on revenue
+    totalQuantitySold: number;
 };
 
-
-// ReportData simplified
 export type ReportData = {
-    kpis: {
-        totalRevenue: number;
-        totalSales: number; // Count of Sale records
-        avgSaleValue: number;
-        newClients: number;
-    };
-    salesOverTime: { date: string; Revenue: number }[]; // Keep Revenue field name for consistency
-    // hostessLeaderboard removed
+    kpis: { totalRevenue: number; totalSales: number; avgSaleValue: number; newClients: number; };
+    salesOverTime: { date: string; Revenue: number }[];
     productLeaderboard: ProductLeaderboardItem[];
 };
-
-
-// ---
-// 12. QR / TOKEN TYPES (Removed/Unused for MVP)
-// ---

@@ -1,14 +1,15 @@
 // File: app/dashboard/pospage/components/SeatingAreaSelector.tsx
 "use client";
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react'; // Import React for ReactNode
 import { Select, Loader, ComboboxItem, Group, Text, Badge, ComboboxLikeRenderOptionInput } from '@mantine/core';
 import { ApiResponse, SeatingAreaWithVisitInfo } from '@/lib/types';
 import { notifications } from '@mantine/notifications';
 import { Armchair } from 'lucide-react';
-import { Client, Visit, SeatingArea } from '@prisma/client'; // Import base types if needed
+import { Client, Visit, SeatingArea } from '@prisma/client';
 
 // Type for the items in the Select dropdown, extending Mantine's base type
+// Make sure this definition matches the data structure created in selectData
 type SelectItem = ComboboxItem & { area: SeatingAreaWithVisitInfo };
 
 type SeatingAreaSelectorProps = {
@@ -47,9 +48,9 @@ export function SeatingAreaSelector({ selectedAreaId, onSelect, disabled }: Seat
             }
         };
         fetchAreas();
-    }, []); // Fetch only once on mount
+    }, []);
 
-    // Prepare data for the Select component, ensuring it includes the 'area' property
+    // Prepare data ensuring it matches SelectItem structure
     const selectData: SelectItem[] = areas.map((area) => ({
         value: area.id.toString(),
         label: area.name,
@@ -66,12 +67,17 @@ export function SeatingAreaSelector({ selectedAreaId, onSelect, disabled }: Seat
         onSelect(selectedItem?.area || null);
     };
 
-    // --- FIX: Cast item.option to SelectItem inside the function ---
-    // Custom rendering for dropdown options
-    const renderSelectOption = (item: ComboboxLikeRenderOptionInput<ComboboxItem>) => {
-        // Cast the base ComboboxItem to our extended SelectItem type
-        const option = item.option as SelectItem;
-        // Now we can safely access option.area
+    // --- FIX: Define render function with explicit cast and correct return type ---
+    const renderSelectOption = (itemProps: ComboboxLikeRenderOptionInput<ComboboxItem>): React.ReactNode => {
+        // Cast the generic ComboboxItem to our specific SelectItem
+        const option = itemProps.option as SelectItem;
+
+        // Defensive check in case casting fails or data is malformed
+        if (!option || !option.area) {
+             console.error("Render option issue: ", itemProps);
+             return <span>Opção Inválida</span>; // Fallback UI
+        }
+
         const areaData = option.area;
         const isOccupied = areaData.visits && areaData.visits.length > 0;
         const clientName = isOccupied ? (areaData.visits[0]?.client?.name || `Cliente #${areaData.visits[0]?.clientId || '?'}`) : null;
@@ -104,7 +110,7 @@ export function SeatingAreaSelector({ selectedAreaId, onSelect, disabled }: Seat
             clearable
             disabled={loading || disabled}
             nothingFoundMessage="Nenhuma área encontrada"
-            renderOption={renderSelectOption} // Use the renderer with the cast
+            renderOption={renderSelectOption} // Use the renderer with the explicit cast
             leftSection={loading ? <Loader size="xs" /> : <Armchair size={16} />}
         />
     );

@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { ApiResponse } from "@/lib/types";
 import { NextRequest, NextResponse } from "next/server";
-import { SeatingArea, SeatingAreaType, Prisma } from "@prisma/client";
+import { SeatingArea, SeatingAreaType, Prisma, StaffRole } from "@prisma/client"; // Added StaffRole
 
 type RouteParams = {
   params: { id: string };
@@ -12,12 +12,12 @@ type RouteParams = {
 /**
  * PATCH /api/seating-areas/[id]
  * Updates an existing seating area.
- * Requires Admin/Manager role (TODO: Implement role check)
+ * Requires Admin/Manager role.
  */
 export async function PATCH(req: NextRequest, { params }: RouteParams) {
     const session = await getSession();
-    // TODO: Add stricter role check (Manager/Admin)
-     if (!session.staff?.isLoggedIn || (session.staff.role !== 'Admin' && session.staff.role !== 'Manager')) {
+    // Stricter role check
+     if (!session.staff?.isLoggedIn || (session.staff.role !== StaffRole.Admin && session.staff.role !== StaffRole.Manager)) {
         return NextResponse.json<ApiResponse>(
             { success: false, error: "Não autorizado (Admin/Manager required)" },
             { status: 403 }
@@ -29,6 +29,9 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
         return NextResponse.json<ApiResponse>({ success: false, error: "ID de área inválido" }, { status: 400 });
     }
 
+    // Define updateData outside try block to use in catch
+    let updateData: Prisma.SeatingAreaUpdateInput = {};
+
     try {
         const body = await req.json();
          const { name, capacity, type, reservationCost, isActive } = body as {
@@ -39,7 +42,8 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
             isActive?: boolean;
         };
 
-        const updateData: Prisma.SeatingAreaUpdateInput = {};
+        // Reset updateData inside try
+        updateData = {};
         let inputError: string | null = null;
 
         if (name !== undefined) {
@@ -47,7 +51,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
             else updateData.name = name.trim();
         }
         if (capacity !== undefined) {
-             const numCapacity = capacity === null || capacity === '' ? null : parseInt(String(capacity)); // Allow empty string to become null
+             const numCapacity = capacity === null || capacity === '' ? null : parseInt(String(capacity));
              if (numCapacity !== null && (isNaN(numCapacity) || numCapacity < 0)) inputError = "Capacidade inválida.";
              else updateData.capacity = numCapacity;
         }
@@ -56,10 +60,9 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
              else updateData.type = type;
         }
         if (reservationCost !== undefined) {
-             const numCost = reservationCost === null || reservationCost === '' ? 0 : parseFloat(String(reservationCost)); // Default to 0 if empty/null
+             const numCost = reservationCost === null || reservationCost === '' ? 0 : parseFloat(String(reservationCost));
              if (isNaN(numCost) || numCost < 0) inputError = "Custo de reserva inválido.";
-             // Pass number directly to Prisma, it will handle Decimal conversion
-             else updateData.reservationCost = numCost;
+             else updateData.reservationCost = numCost; // Pass number to Prisma
         }
          if (isActive !== undefined && typeof isActive === 'boolean') {
              updateData.isActive = isActive;
@@ -91,13 +94,22 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     } catch (error: any) {
         console.error(`PATCH /api/seating-areas/${id} error:`, error);
         if (error instanceof Prisma.PrismaClientKnownRequestError) {
-            if (error.code === 'P2002' && error.meta?.target?.includes('name')) {
-                return NextResponse.json<ApiResponse>({ success: false, error: "Já existe uma área com este nome." }, { status: 409 });
+            if (error.code === 'P2002') {
+                // --- FIX STARTS HERE ---
+                const target = error.meta?.target;
+                const isNameError = Array.isArray(target) && target.includes('name');
+                const isTokenError = Array.isArray(target) && target.includes('qrCodeToken');
+                // --- FIX ENDS HERE ---
+
+                // Check specific fields if they were part of the update request
+                if (isNameError && updateData.name !== undefined) {
+                    return NextResponse.json<ApiResponse>({ success: false, error: "Já existe uma área com este nome." }, { status: 409 });
+                }
+                 if (isTokenError && updateData.qrCodeToken !== undefined) { // qrCodeToken cannot be updated via this route currently, but check anyway
+                     return NextResponse.json<ApiResponse>({ success: false, error: "Este token QR já está em uso." }, { status: 409 });
+                 }
+                 // Handle other P2002 errors generically if necessary
             }
-             if (error.code === 'P2002' && error.meta?.target?.includes('qrCodeToken') && updateData.qrCodeToken) {
-                 // If updating token and it conflicts (unlikely unless manually set)
-                 return NextResponse.json<ApiResponse>({ success: false, error: "Este token QR já está em uso." }, { status: 409 });
-             }
             if (error.code === 'P2025') {
                  return NextResponse.json<ApiResponse>({ success: false, error: "Área de assento não encontrada." }, { status: 404 });
             }
@@ -109,11 +121,11 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
 /**
  * DELETE /api/seating-areas/[id]
  * Deletes a seating area (soft delete - sets isActive to false).
- * Requires Admin/Manager role (TODO: Implement role check)
+ * Requires Admin/Manager role.
  */
 export async function DELETE(req: NextRequest, { params }: RouteParams) {
     const session = await getSession();
-     if (!session.staff?.isLoggedIn || (session.staff.role !== 'Admin' && session.staff.role !== 'Manager')) {
+     if (!session.staff?.isLoggedIn || (session.staff.role !== StaffRole.Admin && session.staff.role !== StaffRole.Manager)) {
         return NextResponse.json<ApiResponse>(
             { success: false, error: "Não autorizado (Admin/Manager required)" },
             { status: 403 }

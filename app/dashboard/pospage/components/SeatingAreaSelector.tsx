@@ -2,7 +2,6 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-// --- FIX: Import ComboboxLikeRenderOptionInput type ---
 import { Select, Loader, ComboboxItem, Group, Text, Badge, ComboboxLikeRenderOptionInput } from '@mantine/core';
 import { ApiResponse, SeatingAreaWithVisitInfo } from '@/lib/types';
 import { notifications } from '@mantine/notifications';
@@ -63,23 +62,23 @@ export function SeatingAreaSelector({ selectedAreaId, onSelect, disabled }: Seat
             onSelect(null);
             return;
         }
-        // Find the corresponding SelectItem based on value
         const selectedItem = selectData.find((item) => item.value === value);
-        onSelect(selectedItem?.area || null); // Pass the 'area' object
+        onSelect(selectedItem?.area || null);
     };
 
-    // --- FIX: Correct function signature and access option via item.option ---
+    // --- FIX: Cast item.option to SelectItem inside the function ---
     // Custom rendering for dropdown options
-    const renderSelectOption = (item: ComboboxLikeRenderOptionInput<SelectItem>) => {
-        // Access our custom 'area' property via item.option.area
-        const areaData = item.option.area;
+    const renderSelectOption = (item: ComboboxLikeRenderOptionInput<ComboboxItem>) => {
+        // Cast the base ComboboxItem to our extended SelectItem type
+        const option = item.option as SelectItem;
+        // Now we can safely access option.area
+        const areaData = option.area;
         const isOccupied = areaData.visits && areaData.visits.length > 0;
         const clientName = isOccupied ? (areaData.visits[0]?.client?.name || `Cliente #${areaData.visits[0]?.clientId || '?'}`) : null;
 
         return (
-            <Group key={item.option.value} justify="space-between" wrap="nowrap">
-                {/* Use item.option.label for the display label */}
-                <Text>{item.option.label}</Text>
+            <Group key={option.value} justify="space-between" wrap="nowrap">
+                <Text>{option.label}</Text>
                 {isOccupied ? (
                     <Badge color="red" size="sm" variant="light" >
                         Ocupada ({clientName})
@@ -105,7 +104,7 @@ export function SeatingAreaSelector({ selectedAreaId, onSelect, disabled }: Seat
             clearable
             disabled={loading || disabled}
             nothingFoundMessage="Nenhuma área encontrada"
-            renderOption={renderSelectOption} // Use the corrected renderer
+            renderOption={renderSelectOption} // Use the renderer with the cast
             leftSection={loading ? <Loader size="xs" /> : <Armchair size={16} />}
         />
     );

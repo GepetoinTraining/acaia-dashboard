@@ -58,21 +58,26 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
 
         // --- FIX: Revised Year Validation ---
         if (year !== undefined) {
-            const numYear = year === null || year === '' ? null : parseInt(String(year));
+            // Attempt to parse only if year is not null or empty string
+            const numYear = (year === null || year === '') ? null : parseInt(String(year));
 
-            if (numYear === null) { // If input was null, empty, or failed parseInt
-                 if (year !== null && year !== '') { // Check if input wasn't explicitly null/empty
-                     inputError = "Ano inválido (deve ser numérico ou vazio).";
-                 } else {
-                     updateData.year = null; // Allow setting year back to null
-                 }
-            } else if (isNaN(numYear) || numYear < 1000 || numYear > new Date().getFullYear() + 1) { // Check range if numYear is a number
+            if (numYear === null) {
+                // If the intention was to clear the year, allow it
+                if (year === null || year === '') {
+                    updateData.year = null;
+                } else {
+                    // If input was not null/empty but parseInt failed (returned NaN which became null here implicitly before, now handle explicitly)
+                    // We check if numYear is NaN after ensuring it's not null.
+                    inputError = "Ano inválido (deve ser numérico ou vazio).";
+                }
+            } else if (isNaN(numYear) || numYear < 1000 || numYear > new Date().getFullYear() + 1) { // Now isNaN check is safe
                  inputError = "Ano inválido (ex: 1995).";
             } else {
                  updateData.year = numYear; // Valid number
             }
         }
         // --- End Fix ---
+
 
         if (timesPlayed !== undefined) {
              const numPlays = timesPlayed === null || timesPlayed === '' ? 0 : parseInt(String(timesPlayed)); // Default to 0 if empty/null
@@ -95,6 +100,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
             data: updateData,
         });
 
+        // No Decimals to serialize in VinylRecord
         return NextResponse.json<ApiResponse<VinylRecord>>(
             { success: true, data: updatedRecord },
             { status: 200 }

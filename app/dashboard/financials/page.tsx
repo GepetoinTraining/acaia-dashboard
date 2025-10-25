@@ -4,16 +4,13 @@
 import { Text, Stack, LoadingOverlay, Alert, Tabs } from "@mantine/core";
 import { PageHeader } from "../components/PageHeader";
 import { useState, useEffect } from "react";
-// Import HostessPayoutSummary explicitly if needed for casting, or rely on FinancialsData
-// REMOVED HostessPayoutSummary import if not used elsewhere, FinancialsData simplified in types.ts
 import { ApiResponse, FinancialsData } from "@/lib/types";
 import { notifications } from "@mantine/notifications";
-// Removed Heart icon
 import { Building, CircleDollarSign, User } from "lucide-react";
 import { StaffPayoutTable } from "./components/StaffPayoutTable";
-import { PartnerPayoutTable } from "./components/PartnerPayoutTable";
-// REMOVED HostessPayoutInfo import
-// import { HostessPayoutInfo } from "./components/HostessPayoutInfo";
+// --- FIX: Remove the import for the non-existent component ---
+// import { PartnerPayoutTable } from "./components/PartnerPayoutTable";
+
 
 export default function FinancialsPage() {
     const [data, setData] = useState<FinancialsData | null>(null);
@@ -24,20 +21,16 @@ export default function FinancialsPage() {
         try {
             const response = await fetch("/api/financials");
             if (!response.ok) {
-                // Try to parse error from response body
                 let errorMsg = "Failed to fetch financial data";
                 try {
                     const errorResult: ApiResponse = await response.json();
                     if (errorResult.error) {
                         errorMsg = errorResult.error;
                     }
-                } catch (parseError) {
-                    // Ignore if response is not JSON
-                }
+                } catch (parseError) { /* Ignore */ }
                 throw new Error(errorMsg);
             }
             const result: ApiResponse<FinancialsData> = await response.json();
-            // Ensure data structure matches simplified FinancialsData (no hostessPayouts expected)
             if (result.success && result.data) {
                 setData(result.data);
             } else {
@@ -50,6 +43,7 @@ export default function FinancialsPage() {
                 message: error.message,
                 color: "red",
             });
+            setData(null); // Ensure data is null on error
         } finally {
             setLoading(false);
         }
@@ -60,13 +54,12 @@ export default function FinancialsPage() {
         fetchData();
     }, []);
 
-    // Early return or conditional rendering for loading/error state
     if (loading) {
         return (
             <Stack>
-                <PageHeader title="Financeiro (Contas a Pagar)" />
-                <LoadingOverlay visible={true} />
-                <Text>Carregando dados financeiros...</Text>
+                <PageHeader title="Financeiro (Comissões Staff)" /> {/* Updated title */}
+                <LoadingOverlay visible={true} overlayProps={{ radius: "sm", blur: 1 }}/>
+                {/* <Text>Carregando dados financeiros...</Text> */}
             </Stack>
         );
     }
@@ -74,9 +67,9 @@ export default function FinancialsPage() {
     if (!data) {
         return (
             <Stack>
-                <PageHeader title="Financeiro (Contas a Pagar)" />
+                <PageHeader title="Financeiro (Comissões Staff)" /> {/* Updated title */}
                 <Alert color="red" title="Erro">
-                    Não foi possível carregar os dados financeiros. Tente novamente mais tarde.
+                    Não foi possível carregar os dados financeiros. Tente recarregar a página.
                 </Alert>
             </Stack>
         );
@@ -85,45 +78,31 @@ export default function FinancialsPage() {
 
     return (
         <Stack>
-            <PageHeader title="Financeiro (Contas a Pagar)" />
+            <PageHeader title="Financeiro (Comissões Staff)" /> {/* Updated title */}
 
-            <Tabs defaultValue="staff" color="pastelGreen"> {/* Updated color */}
+            {/* Simplified Tabs - Only Staff */}
+            <Tabs defaultValue="staff" color="pastelGreen">
                 <Tabs.List>
                     <Tabs.Tab value="staff" leftSection={<User size={16} />}>
-                        Staff
+                        Comissões Staff
                     </Tabs.Tab>
-                    {/* Partner payouts might be removed if consignment is deferred further */}
-                    {/* For now, keep it if Partner CRUD is still in */}
+                    {/* Removed Partner Tab */}
                     {/* <Tabs.Tab value="partners" leftSection={<Building size={16} />}>
                         Parceiros
-                    </Tabs.Tab> */}
-                    {/* REMOVED Hostesses Tab */}
-                    {/* <Tabs.Tab value="hostesses" leftSection={<Heart size={16} />}>
-                        Hostesses
                     </Tabs.Tab> */}
                 </Tabs.List>
 
                 <Tabs.Panel value="staff" pt="md">
                     <StaffPayoutTable
+                        // Ensure commissions is always an array
                         commissions={data.staffCommissions || []}
                         onSuccess={fetchData}
                     />
                 </Tabs.Panel>
 
-                 {/* REMOVED Partner Payout Panel or keep if needed */}
-                {/* <Tabs.Panel value="partners" pt="md">
-                    <PartnerPayoutTable
-                        payouts={data.partnerPayouts || []} // This might error if partnerPayouts was removed from FinancialsData
-                        onSuccess={fetchData}
-                    />
-                </Tabs.Panel> */}
+                 {/* Removed Partner Panel */}
+                {/* <Tabs.Panel value="partners" pt="md"> ... </Tabs.Panel> */}
 
-                {/* REMOVED Hostesses Panel */}
-                {/* <Tabs.Panel value="hostesses" pt="md">
-                    <HostessPayoutInfo
-                        data={data.hostessPayouts || []} // This will error as hostessPayouts is removed
-                    />
-                </Tabs.Panel> */}
             </Tabs>
         </Stack>
     );

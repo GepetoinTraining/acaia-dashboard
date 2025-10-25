@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { ApiResponse } from "@/lib/types";
 import { NextRequest, NextResponse } from "next/server";
-import { Entertainer, Prisma } from "@prisma/client";
+import { Entertainer, Prisma, StaffRole } from "@prisma/client"; // Added StaffRole
 
 type RouteParams = {
     params: { id: string };
@@ -12,12 +12,12 @@ type RouteParams = {
 /**
  * PATCH /api/entertainers/[id]
  * Updates an existing entertainer.
- * Requires Admin/Manager role (TODO: Implement stricter role check).
+ * Requires Admin/Manager role.
  */
 export async function PATCH(req: NextRequest, { params }: RouteParams) {
     const session = await getSession();
-    // TODO: Add stricter role check (Manager/Admin)
-     if (!session.staff?.isLoggedIn || session.staff.role !== 'Admin' && session.staff.role !== 'Manager') {
+    // Stricter role check
+    if (!session.staff?.isLoggedIn || (session.staff.role !== StaffRole.Admin && session.staff.role !== StaffRole.Manager)) {
         return NextResponse.json<ApiResponse>(
             { success: false, error: "Não autorizado (Admin/Manager required)" },
             { status: 403 }
@@ -32,6 +32,9 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
         );
     }
 
+    // Define updateData outside try to use in catch
+    let updateData: Prisma.EntertainerUpdateInput = {};
+
     try {
         const body = await req.json() as {
             name?: string;
@@ -42,8 +45,6 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
 
         const { name, type, contactNotes, isActive } = body;
 
-        // --- Build update data ---
-        const updateData: Prisma.EntertainerUpdateInput = {};
         let inputError: string | null = null;
 
         if (name !== undefined) {
@@ -55,7 +56,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
              else updateData.type = type.trim();
         }
         if (contactNotes !== undefined) {
-             updateData.contactNotes = contactNotes || null; // Allow setting to null
+             updateData.contactNotes = contactNotes || null;
         }
         if (isActive !== undefined && typeof isActive === 'boolean') {
              updateData.isActive = isActive;
@@ -67,7 +68,6 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
         if (Object.keys(updateData).length === 0) {
             return NextResponse.json<ApiResponse>({ success: false, error: "Nenhum dado fornecido para atualização." }, { status: 400 });
         }
-        // --- End build update data ---
 
         const updatedEntertainer = await prisma.entertainer.update({
             where: { id },
@@ -82,10 +82,19 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     } catch (error: any) {
         console.error(`PATCH /api/entertainers/${id} error:`, error);
         if (error instanceof Prisma.PrismaClientKnownRequestError) {
-            if (error.code === 'P2002' && error.meta?.target?.includes('name')) {
-                 return NextResponse.json<ApiResponse>({ success: false, error: "Já existe um artista com este nome." }, { status: 409 });
+            if (error.code === 'P2002') {
+                // --- FIX STARTS HERE ---
+                const target = error.meta?.target;
+                const isNameError = Array.isArray(target) && target.includes('name');
+                // --- FIX ENDS HERE ---
+
+                // Only return specific error if name was being updated and caused the conflict
+                if (isNameError && updateData.name !== undefined) {
+                     return NextResponse.json<ApiResponse>({ success: false, error: "Já existe um artista com este nome." }, { status: 409 });
+                }
+                // Handle other potential unique constraint errors if needed
             }
-            if (error.code === 'P2025') { // Record to update not found
+            if (error.code === 'P2025') {
                  return NextResponse.json<ApiResponse>({ success: false, error: "Artista não encontrado." }, { status: 404 });
             }
         }
@@ -96,11 +105,11 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
 /**
  * DELETE /api/entertainers/[id]
  * Deletes an entertainer (soft delete - sets isActive to false).
- * Requires Admin/Manager role (TODO: Implement stricter role check).
+ * Requires Admin/Manager role.
  */
 export async function DELETE(req: NextRequest, { params }: RouteParams) {
     const session = await getSession();
-     if (!session.staff?.isLoggedIn || session.staff.role !== 'Admin' && session.staff.role !== 'Manager') {
+     if (!session.staff?.isLoggedIn || (session.staff.role !== StaffRole.Admin && session.staff.role !== StaffRole.Manager)) {
         return NextResponse.json<ApiResponse>(
             { success: false, error: "Não autorizado (Admin/Manager required)" },
             { status: 403 }
@@ -113,7 +122,6 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
     }
 
     try {
-        // Soft delete by marking as inactive
         const updatedEntertainer = await prisma.entertainer.update({
             where: { id },
             data: { isActive: false },
@@ -121,7 +129,7 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
 
         return NextResponse.json<ApiResponse>(
             { success: true, data: { message: `Artista "${updatedEntertainer.name}" desativado.` } },
-            { status: 200 } // OK status for successful update/soft delete
+            { status: 200 }
         );
 
     } catch (error: any) {

@@ -23,19 +23,14 @@ import {
 } from "lucide-react";
 import { useDisclosure } from "@mantine/hooks";
 import { useState, useEffect, useCallback } from "react";
-// --- FIX: Import SeatingAreaWithVisitInfo ---
-import { ApiResponse, LiveData, CartItem, SeatingAreaWithVisitInfo } from "@/lib/types";
-import { Product, Visit, Client, SeatingArea } from "@prisma/client"; // Keep base types if needed elsewhere
+// --- Ensure SeatingAreaWithVisitInfo is imported ---
+import { ApiResponse, CartItem, SeatingAreaWithVisitInfo } from "@/lib/types";
+import { Product, Visit, Client, SeatingArea, ProductType, PrepStation } from "@prisma/client"; // Added missing enums/types
 import { notifications } from "@mantine/notifications";
-import { SeatingAreaSelector } from "./components/SeatingAreaSelector"; // Correct component
+import { SeatingAreaSelector } from "./components/SeatingAreaSelector";
 import { ProductSelector } from "./components/ProductSelector";
 import { Cart } from "./components/Cart";
 import { SubmitOrderModal } from "./components/SubmitOrderModal";
-
-// --- REMOVED Local SeatingAreaWithVisit type definition ---
-// type SeatingAreaWithVisit = SeatingArea & {
-//     visits: (Visit & { client: Client | null })[];
-// };
 
 // Define simplified SalePayload inline
 interface AcaiaSalePayload {
@@ -46,15 +41,22 @@ interface AcaiaSalePayload {
   }[];
 }
 
+// Define the type for the simplified visit info used in this component's state
+type ActiveVisitInfo = {
+    id: number;
+    clientId: number | null;
+    client: { name: string | null } | null;
+} | null; // Allow null
+
 function PosClientPage() {
+  // Use Product type from Prisma, but remember prices are numbers here
   const [products, setProducts] = useState<Product[]>([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
   const [loadingSubmit, setLoadingSubmit] = useState(false);
 
-  // --- FIX: Use SeatingAreaWithVisitInfo for state ---
+  // --- Ensure state uses the imported type ---
   const [selectedArea, setSelectedArea] = useState<SeatingAreaWithVisitInfo | null>(null);
-  // activeVisit can be simplified or derived directly from selectedArea if needed
-  const [activeVisitInfo, setActiveVisitInfo] = useState<{ id: number; clientId: number | null; client: { name: string | null } | null } | null>(null);
+  const [activeVisitInfo, setActiveVisitInfo] = useState<ActiveVisitInfo>(null); // Use the defined type
   const [cart, setCart] = useState<CartItem[]>([]);
 
   const [submitModal, { open: openSubmitModal, close: closeSubmitModal }] =
@@ -66,18 +68,17 @@ function PosClientPage() {
     try {
       const response = await fetch("/api/products");
       if (!response.ok) throw new Error("Falha ao buscar produtos");
-      // Expect Product[] but prices might be numbers due to API serialization
-      const result: ApiResponse<Product[]> = await response.json();
+      const result: ApiResponse<Product[]> = await response.json(); // API returns serialized Product[]
       if (result.success && result.data) {
-          // Deserialize prices back to numbers if needed by Cart/ProductSelector
+          // Deserialize prices back to numbers
           const deserializedProducts = result.data.map(p => ({
               ...p,
-              // Convert string prices back to numbers
+              // Convert string/Decimal representations from API back to numbers
               costPrice: Number(p.costPrice || 0),
               salePrice: Number(p.salePrice || 0),
               deductionAmountInSmallestUnit: Number(p.deductionAmountInSmallestUnit || 1),
           }));
-        setProducts(deserializedProducts);
+        setProducts(deserializedProducts as unknown as Product[]); // Cast needed as Decimal type is lost
       } else {
         throw new Error(result.error || "Não foi possível carregar produtos");
       }
@@ -88,7 +89,7 @@ function PosClientPage() {
         message: error.message,
         color: "red",
       });
-       setProducts([]); // Clear on error
+       setProducts([]);
     } finally {
       setLoadingProducts(false);
     }
@@ -98,29 +99,26 @@ function PosClientPage() {
     fetchProducts();
   }, [fetchProducts]);
 
-  // --- FIX: Update function signature to use SeatingAreaWithVisitInfo ---
-  // Handle Seating Area Selection
+  // --- Ensure function signature uses the imported type ---
   const handleSelectArea = (area: SeatingAreaWithVisitInfo | null) => {
     setSelectedArea(area);
-    // Use the simplified visit info from the selected area
     if (area && area.visits.length > 0) {
+      // Set state using the simplified structure
       setActiveVisitInfo(area.visits[0]);
     } else {
       setActiveVisitInfo(null);
     }
-    // Optionally reset cart
-    // setCart([]);
   };
 
   // Reset order state
   const resetOrder = () => {
     setSelectedArea(null);
-    setActiveVisitInfo(null); // Reset simplified info
+    setActiveVisitInfo(null);
     setCart([]);
     closeSubmitModal();
   };
 
-  // Calculate cart total (using Number conversion)
+  // Calculate cart total
   const cartTotal = cart.reduce(
     (acc, item) => acc + (Number(item.product.salePrice) * item.quantity),
     0
@@ -139,7 +137,7 @@ function PosClientPage() {
 
      setLoadingSubmit(true);
 
-     const payload: AcaiaSalePayload = { // Ensure payload matches interface
+     const payload: AcaiaSalePayload = {
         seatingAreaId: selectedArea.id,
         cart: cart.map(item => ({
             productId: item.product.id,
@@ -165,8 +163,6 @@ function PosClientPage() {
         color: "green",
       });
       resetOrder();
-      // TODO: Consider triggering a refetch of seating areas to update occupancy status in the selector
-      // Maybe add a refresh function prop to SeatingAreaSelector? For MVP, manual refresh is okay.
     } catch (error: any) {
       notifications.show({
         title: "Erro ao Enviar Pedido",
@@ -210,7 +206,7 @@ function PosClientPage() {
               {/* Ensure SeatingAreaSelector's onSelect prop type matches handleSelectArea */}
               <SeatingAreaSelector
                 selectedAreaId={selectedArea?.id || null}
-                onSelect={handleSelectArea}
+                onSelect={handleSelectArea} // Pass the correctly typed handler
                 disabled={loadingProducts}
               />
                {selectedArea && (
@@ -228,6 +224,8 @@ function PosClientPage() {
                 products={products}
                 loading={loadingProducts}
                 onAddProduct={(product) => {
+                  // Ensure product passed to setCart has correct Price types if needed by Cart
+                  // Here we assume Cart handles number prices
                   setCart((currentCart) => {
                     const existing = currentCart.find(
                       (i) => i.product.id === product.id
@@ -239,7 +237,8 @@ function PosClientPage() {
                           : i
                       );
                     }
-                    return [...currentCart, { product, quantity: 1 }];
+                    // Ensure the product added to cart matches CartItem type
+                    return [...currentCart, { product: product as Product, quantity: 1 }];
                   });
                 }}
               />

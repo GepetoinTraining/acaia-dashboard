@@ -1,96 +1,94 @@
 // File: app/dashboard/promotions/page.tsx
 "use client";
 
-/* // --- COMMENT OUT START ---
-import { Button, Stack, Text } from "@mantine/core"; // Added Text
-import { PageHeader } from "../components/PageHeader";
-import { Plus, Megaphone } from "lucide-react";
-import { useDisclosure } from "@mantine/hooks";
 import { useState, useEffect } from "react";
-import { ApiResponse } from "@/lib/types";
-// PromotionBulletin does not exist
-// import { PromotionBulletin, Product } from "@prisma/client";
+import { Stack, Group, Button, LoadingOverlay } from "@mantine/core";
+import { PageHeader } from "../components/PageHeader";
+import { Plus } from "lucide-react";
+import { useDisclosure } from "@mantine/hooks";
+import { ApiResponse, Product } from "@/lib/types"; // Use client-side Product
+import { Promotion } from "@prisma/client"; // Keep base Promotion type
+import { notifications } from "@mantine/notifications";
 import { CreatePromotionModal } from "./components/CreatePromotionModal";
 import { PromotionTable } from "./components/PromotionTable";
 
-// Extend type to include product name - This type is no longer needed
-// export type PromotionWithProduct = PromotionBulletin & {
-//   product: Product | null;
-// };
+// --- FIX: Add 'export' to this type definition ---
+export type PromotionWithProduct = Promotion & {
+    product: Product | null; // Use client-side Product type
+};
 
-function PromotionsClientPage() {
-  // const [promotions, setPromotions] = useState<PromotionWithProduct[]>([]);
+export default function PromotionsPage() {
+  // --- FIX: Use PromotionWithProduct type ---
+  const [promotions, setPromotions] = useState<PromotionWithProduct[]>([]);
+  const [products, setProducts] = useState<Product[]>([]); // Use client-side Product
   const [loading, setLoading] = useState(true);
-  const [opened, { open, close }] = useDisclosure(false);
+  const [createModal, { open: openCreateModal, close: closeCreateModal }] = useDisclosure(false);
 
-  // const fetchPromotions = async () => {
-  //   setLoading(true);
-  //   try {
-  //     const response = await fetch("/api/promotions");
-  //     if (!response.ok) throw new Error("Failed to fetch promotions");
-  //     const result: ApiResponse<PromotionWithProduct[]> =
-  //       await response.json();
-  //     if (result.success && result.data) {
-  //       setPromotions(result.data);
-  //     }
-  //   } catch (error) {
-  //     console.error(error);
-  //     // TODO: Show notification
-  //   } finally {
-  //     setLoading(false);
-  //   }
-  // };
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      // Fetch promotions (assuming API returns PromotionWithProduct)
+      const promoRes = await fetch("/api/promotions");
+      if (!promoRes.ok) throw new Error("Falha ao buscar promoções");
+      const promoResult: ApiResponse<PromotionWithProduct[]> = await promoRes.json();
+      
+      // Fetch products (API returns client-side Product)
+      const prodRes = await fetch("/api/products");
+      if (!prodRes.ok) throw new Error("Falha ao buscar produtos");
+      const prodResult: ApiResponse<Product[]> = await prodRes.json();
 
-  // useEffect(() => {
-  //   // fetchPromotions(); // Don't fetch
-  //    setLoading(false); // Just set loading false
-  // }, []);
+      if (promoResult.success && promoResult.data) {
+        setPromotions(promoResult.data);
+      } else {
+        throw new Error(promoResult.error || "Não foi possível carregar promoções");
+      }
+
+      if (prodResult.success && prodResult.data) {
+        setProducts(prodResult.data);
+      } else {
+        throw new Error(prodResult.error || "Não foi possível carregar produtos");
+      }
+
+    } catch (error: any) {
+      notifications.show({
+        title: "Erro",
+        message: error.message,
+        color: "red",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const handlePromotionCreated = (newPromotion: PromotionWithProduct) => {
+    setPromotions(current => [...current, newPromotion]);
+    fetchData(); // Or just add to state, but refetch ensures consistency
+  };
 
   return (
     <>
-      { / * <CreatePromotionModal
-        opened={opened}
-        onClose={close}
-        onSuccess={() => {
-          close();
-          // fetchPromotions(); // Refresh the table
-        }}
-      /> * / }
+      <CreatePromotionModal
+        opened={createModal}
+        onClose={closeCreateModal}
+        products={products} // Pass client-side Product[]
+        onPromotionCreated={handlePromotionCreated}
+      />
       <Stack>
-        <PageHeader
-          title="Promoções (Desativado)" // Updated title
-          // actionButton={
-          //   <Button
-          //     leftSection={<Plus size={16} />}
-          //     onClick={open}
-          //     color="pastelGreen" // Use theme color
-          //     disabled // Disable button
-          //   >
-          //     Criar Promoção (Desativado)
-          //   </Button>
-          // }
-        />
-         <Text c="dimmed">Esta funcionalidade foi removida para o MVP.</Text>
-        { / * <PromotionTable promotions={promotions} loading={loading} /> * / }
+        <PageHeader title="Promoções">
+          <Button leftSection={<Plus size={18} />} onClick={openCreateModal}>
+            Criar Promoção
+          </Button>
+        </PageHeader>
+
+        <div style={{ position: 'relative' }}>
+          <LoadingOverlay visible={loading} zIndex={10} overlayProps={{ radius: "sm", blur: 2 }} />
+          <PromotionTable promotions={promotions} /> 
+        </div>
       </Stack>
     </>
   );
-}
-
-export default function PromotionsPage() {
-  return <PromotionsClientPage />;
-}
-*/ // --- COMMENT OUT END ---
-
-// Placeholder component to avoid errors
-import { Stack, Text } from "@mantine/core";
-import { PageHeader } from "../components/PageHeader";
-
-export default function PromotionsPagePlaceholder() {
-    return (
-        <Stack>
-            <PageHeader title="Promoções (Desativado)" />
-            <Text c="dimmed">Esta funcionalidade foi removida para o MVP.</Text>
-        </Stack>
-    );
 }

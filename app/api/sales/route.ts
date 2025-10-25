@@ -3,7 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { ApiResponse } from "@/lib/types";
 import { NextRequest, NextResponse } from "next/server";
-import { Prisma, Sale, StaffRole, ClientStatus, Visit, Client, SeatingArea, StockMovementType, Product, InventoryItem } from "@prisma/client";
+// --- FIX: Import BatchPayload ---
+import { Prisma, Sale, StaffRole, ClientStatus, Visit, Client, SeatingArea, StockMovementType, Product, InventoryItem, BatchPayload } from "@prisma/client";
 
 // Define expected payload shape directly
 interface AcaiaSalePayload {
@@ -17,7 +18,7 @@ interface AcaiaSalePayload {
 // Define the type for Visit including potential relations we use
 type VisitWithRelations = Visit & {
     client: Client | null;
-    seatingArea: SeatingArea | null; // Keep seatingArea relation
+    seatingArea: SeatingArea | null;
 };
 
 
@@ -174,12 +175,7 @@ export async function POST(req: NextRequest) {
                 where: { id: clientId },
                 data: {
                     lifetimeSpend: { increment: totalSaleAmount },
-                    // --- FIX: Removed lastVisitSpend ---
-                    // lastVisitSpend: totalSaleAmount,
                     lastVisitDate: new Date(),
-                    // Update totalVisits? - Needs careful consideration if a visit spans multiple transactions
-                    // Maybe increment totalVisits when the VISIT is created instead?
-                    // For now, only update spend and date.
                 },
             }),
             prisma.staffCommission.create({
@@ -198,8 +194,10 @@ export async function POST(req: NextRequest) {
         const transactionResults = await prisma.$transaction(transactionPromises);
 
         // --- 5. Return Success ---
-         const createdSalesResult = transactionResults[0];
+         // --- FIX: Cast the first result to BatchPayload ---
+         const createdSalesResult = transactionResults[0] as Prisma.BatchPayload;
          const salesCount = createdSalesResult?.count ?? 0;
+         // --- End Fix ---
 
         return NextResponse.json<ApiResponse<{ salesCreated: number }>>(
             { success: true, data: { salesCreated: salesCount } },

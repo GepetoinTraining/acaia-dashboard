@@ -1,26 +1,25 @@
 // File: app/dashboard/bar/page.tsx
 "use client";
 
-import { Button, Stack, Tabs, Title } from "@mantine/core";
+import { Button, Stack, Tabs, Title, Loader, Text, Center } from "@mantine/core"; // Added Loader, Text, Center
 import { PageHeader } from "../components/PageHeader";
 import { Box, Package, Plus } from "lucide-react";
 import { useDisclosure } from "@mantine/hooks";
 import { useState, useEffect } from "react";
 import { ApiResponse, AggregatedStock } from "@/lib/types";
-// --- FIX: Import UnitOfMeasure instead of SmallestUnit ---
-import { InventoryItem, UnitOfMeasure } from "@prisma/client";
+import { InventoryItem, UnitOfMeasure } from "@prisma/client"; // Use UnitOfMeasure
 import { CurrentStockTable } from "./components/CurrentStockTable";
 import { CreateInventoryItemModal } from "./components/CreateInventoryItemModal";
-// --- FIX: Ensure import name matches export name (should be correct already) ---
+// --- Check this import carefully ---
 import { InventoryItemTable } from "./components/InventoryItemTable";
 import { AddStockModal } from "./components/AddStockModal";
+import { notifications } from "@mantine/notifications"; // Added notifications import
+
 
 // Define the type expected from the API after serialization
-// Using the correct UnitOfMeasure enum
 type SerializedInventoryItem = Omit<InventoryItem, 'storageUnitSizeInSmallest' | 'reorderThresholdInSmallest' | 'createdAt'> & {
   storageUnitSizeInSmallest: number | null;
   reorderThresholdInSmallest: number | null;
-  // --- FIX: Ensure smallestUnit uses the correct enum type ---
   smallestUnit: UnitOfMeasure;
 };
 
@@ -42,28 +41,40 @@ function BarClientPage() {
     setLoadingStock(true);
     setLoadingItems(true);
     try {
-      const stockRes = await fetch("/api/inventory?aggregate=true");
+      const [stockRes, itemsRes] = await Promise.all([
+         fetch("/api/inventory?aggregate=true"),
+         fetch("/api/inventory/items")
+      ]);
+
+      // Process stock response
+      if (!stockRes.ok) {
+           const errorResult = await stockRes.json().catch(() => ({ error: `HTTP error! status: ${stockRes.status}` }));
+           throw new Error(errorResult.error || `Falha ao buscar estoque: ${stockRes.status}`);
+      }
       const stockResult: ApiResponse<AggregatedStock[]> = await stockRes.json();
       if (stockResult.success && stockResult.data) {
         setStockLevels(stockResult.data);
       } else {
-         // Handle error if needed
-         console.error("Failed to fetch stock levels:", stockResult.error);
-         notifications.show({ title: "Erro", message: stockResult.error || "Falha ao buscar estoque", color: "red" });
+         throw new Error(stockResult.error || "Não foi possível carregar estoque");
       }
 
-      const itemsRes = await fetch("/api/inventory/items");
+      // Process items response
+      if (!itemsRes.ok) {
+           const errorResult = await itemsRes.json().catch(() => ({ error: `HTTP error! status: ${itemsRes.status}` }));
+           throw new Error(errorResult.error || `Falha ao buscar itens: ${itemsRes.status}`);
+      }
       const itemsResult: ApiResponse<SerializedInventoryItem[]> = await itemsRes.json();
       if (itemsResult.success && itemsResult.data) {
-        setInventoryItems(itemsResult.data); // Use data directly
+        setInventoryItems(itemsResult.data);
       } else {
-         // Handle error if needed
-         console.error("Failed to fetch inventory items:", itemsResult.error);
-         notifications.show({ title: "Erro", message: itemsResult.error || "Falha ao buscar itens", color: "red" });
+         throw new Error(itemsResult.error || "Não foi possível carregar itens");
       }
-    } catch (error: any) { // Catch network errors
+
+    } catch (error: any) { // Catch network or API errors
       console.error("Error fetching inventory data:", error);
-       notifications.show({ title: "Erro de Rede", message: error.message || "Falha ao buscar dados de inventário", color: "red" });
+       notifications.show({ title: "Erro ao Carregar Dados", message: error.message || "Falha ao buscar dados de inventário", color: "red" });
+       setStockLevels([]); // Clear data on error
+       setInventoryItems([]);
     } finally {
       setLoadingStock(false);
       setLoadingItems(false);
@@ -97,28 +108,25 @@ function BarClientPage() {
           opened={addStockModal}
           onClose={closeAddStock}
           onSuccess={handleSuccess}
-          // --- FIX: Cast selectedItem (SerializedInventoryItem) to InventoryItem for the modal prop ---
-          // This assumes AddStockModal primarily uses fields present in both,
-          // but be mindful if it strictly needs Decimal types (it shouldn't based on previous checks).
-          item={selectedItem as unknown as InventoryItem}
+          item={selectedItem as unknown as InventoryItem} // Casting needed
         />
       )}
 
       <Stack>
         <PageHeader
-          title="Inventário" // Renamed title slightly
+          title="Inventário"
           actionButton={
             <Button
               leftSection={<Plus size={16} />}
               onClick={openCreateItem}
-              color="pastelGreen" // Use theme color
+              color="pastelGreen"
             >
               Definir Novo Item
             </Button>
           }
         />
 
-        <Tabs defaultValue="stock" color="pastelGreen"> {/* Use theme color */}
+        <Tabs defaultValue="stock" color="pastelGreen">
           <Tabs.List>
             <Tabs.Tab value="stock" leftSection={<Box size={16} />}>
               Estoque Atual
@@ -133,7 +141,6 @@ function BarClientPage() {
               stockLevels={stockLevels}
               loading={loadingStock}
               onAddStock={(stockItem) => {
-                 // Find the full item definition based on the stock item ID
                  const fullItem = inventoryItems.find((i) => i.id === stockItem.inventoryItemId);
                  if (fullItem) {
                    handleOpenAddStock(fullItem);

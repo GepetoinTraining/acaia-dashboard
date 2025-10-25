@@ -1,9 +1,9 @@
 // File: app/api/sales/route.ts
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-import { ApiResponse } from "@/lib/types"; // Removed SalePayload, using AcaiaSalePayload shape inline
+import { ApiResponse } from "@/lib/types";
 import { NextRequest, NextResponse } from "next/server";
-import { Prisma, Sale, StaffRole, ClientStatus, Visit } from "@prisma/client"; // Added ClientStatus, Visit
+import { Prisma, Sale, StaffRole, ClientStatus, Visit, Client, SeatingArea, StockMovementType, Product, InventoryItem } from "@prisma/client"; // Added Client, SeatingArea, StockMovementType, Product, InventoryItem
 
 // Define expected payload shape directly
 interface AcaiaSalePayload {
@@ -13,6 +13,13 @@ interface AcaiaSalePayload {
         quantity: number;
     }[];
 }
+
+// Define the type for Visit including potential relations we use
+type VisitWithRelations = Visit & {
+    client: Client | null;
+    seatingArea: SeatingArea | null; // Keep seatingArea relation
+};
+
 
 // Default CRM data for anonymous client creation
 const defaultCrmData = Prisma.JsonNull;
@@ -25,23 +32,20 @@ const defaultCrmData = Prisma.JsonNull;
 export async function POST(req: NextRequest) {
     const session = await getSession();
 
-    // Check staff login and shift (though shiftId might not be strictly needed if commission linked to staffId)
     if (!session.staff?.isLoggedIn || !session.staff.role) {
         return NextResponse.json<ApiResponse>(
-            { success: false, error: "Não autorizado. Faça login." }, // Updated message slightly
+            { success: false, error: "Não autorizado. Faça login." },
             { status: 401 }
         );
     }
 
-    // Role check: Allow Server, Bartender, or Admin (using PIN check as stand-in)
     const isAllowedRole =
         session.staff.role === StaffRole.Server ||
         session.staff.role === StaffRole.Bartender ||
-        session.staff.role === StaffRole.Manager || // Added Manager
-        session.staff.role === StaffRole.Admin;    // Added Admin
-    // const isAdminOverride = session.staff.pin === "1234"; // Keep admin override? Maybe rely on role.
+        session.staff.role === StaffRole.Manager ||
+        session.staff.role === StaffRole.Admin;
 
-    if (!isAllowedRole /* && !isAdminOverride */) {
+    if (!isAllowedRole) {
         return NextResponse.json<ApiResponse>(
             { success: false, error: "Função não autorizada para registrar vendas" },
             { status: 403 }
@@ -62,12 +66,13 @@ export async function POST(req: NextRequest) {
         }
 
         // --- 1. Find or Create Visit ---
-        let visit: Visit | null = await prisma.visit.findFirst({
+        // Use a more specific type that includes the relations we query for
+        let visit: VisitWithRelations | null = await prisma.visit.findFirst({
             where: {
                 seatingAreaId: seatingAreaId,
                 exitTime: null, // Active visit
             },
-             include: { client: true } // Include client for updates later
+            include: { client: true, seatingArea: true } // Include client and seatingArea
         });
 
         let clientId: number;
@@ -76,7 +81,7 @@ export async function POST(req: NextRequest) {
             // No active visit found, create an anonymous client and a new visit
             const anonClient = await prisma.client.create({
                 data: {
-                    name: `Patrono #${Date.now().toString().slice(-6)}`, // Simple unique-ish anonymous name
+                    name: `Patrono #${Date.now().toString().slice(-6)}`,
                     phoneNumber: null,
                     status: ClientStatus.new,
                     crmData: defaultCrmData,
@@ -84,32 +89,35 @@ export async function POST(req: NextRequest) {
             });
             clientId = anonClient.id;
 
-            visit = await prisma.visit.create({
+            // Create the visit
+            const createdVisit = await prisma.visit.create({
                 data: {
                     clientId: clientId,
                     seatingAreaId: seatingAreaId,
-                    entryFeePaid: new Prisma.Decimal(0), // No entry fee via POS sale
-                    consumableCreditTotal: new Prisma.Decimal(0), // No credit system
-                    consumableCreditRemaining: new Prisma.Decimal(0),
+                    entryFeePaid: 0,
+                    consumableCreditTotal: 0,
+                    consumableCreditRemaining: 0,
                 }
             });
-             // Re-fetch visit with client included after creation
-            visit = await prisma.visit.findUnique({ where: { id: visit.id }, include: { client: true } });
-            if (!visit) throw new Error("Falha ao criar nova visita associada à mesa.");
+            // Re-fetch visit WITH relations to ensure 'visit' variable has the correct type
+            visit = await prisma.visit.findUnique({
+                 where: { id: createdVisit.id },
+                 include: { client: true, seatingArea: true } // Include necessary relations
+            });
+            if (!visit) throw new Error("Falha ao buscar a visita recém-criada associada à mesa.");
 
         } else {
-             // Use existing visit's client ID
+             // Use existing visit's client ID, ensuring it exists
              if (!visit.clientId) {
-                  // This case *shouldn't* happen if check-in/previous logic is correct, but handle defensively
-                  // Create an anonymous client and link it to the existing visit
                    const anonClient = await prisma.client.create({
                        data: { name: `Patrono #${Date.now().toString().slice(-6)}`, status: ClientStatus.new, crmData: defaultCrmData }
                    });
                    clientId = anonClient.id;
+                   // Update and re-fetch visit WITH relations
                    visit = await prisma.visit.update({
                        where: { id: visit.id },
                        data: { clientId: clientId },
-                       include: { client: true }
+                       include: { client: true, seatingArea: true } // Include relations
                    });
                    if (!visit) throw new Error("Falha ao associar cliente anônimo a visita existente.");
 
@@ -117,20 +125,24 @@ export async function POST(req: NextRequest) {
                  clientId = visit.clientId;
              }
         }
-        // Ensure client exists on the visit object for later updates
-        if (!visit.client) {
+
+        // --- FIX: Moved the check here, after 'visit' is guaranteed to be assigned ---
+        // Ensure client relation exists on the final visit object
+        if (!visit?.client) { // Added null check for visit itself just in case
              throw new Error("Cliente associado à visita não encontrado.");
         }
-
+        // --- End Fix ---
 
         // --- 2. Get Product Data ---
         const products = await prisma.product.findMany({
             where: { id: { in: cart.map((item) => item.productId) } },
+            include: { inventoryItem: true }
         });
 
         // --- 3. Calculate Totals & Prepare Sale Items ---
-        let totalSaleAmount = new Prisma.Decimal(0); // Use Decimal for precision
+        let totalSaleAmount = 0;
         const saleItemsData: Prisma.SaleCreateManyInput[] = [];
+        const stockLedgerData: Prisma.StockLedgerCreateManyInput[] = [];
 
         for (const item of cart) {
             const product = products.find((p) => p.id === item.productId);
@@ -138,92 +150,65 @@ export async function POST(req: NextRequest) {
                 throw new Error(`Produto ID ${item.productId} não encontrado no carrinho`);
             }
 
-            // Calculations with Decimal
-            const priceAtSale = product.salePrice; // Already Decimal
-            const itemTotal = priceAtSale.times(item.quantity); // Decimal multiplication
-
-            totalSaleAmount = totalSaleAmount.plus(itemTotal); // Decimal addition
+            const priceAtSale = Number(product.salePrice);
+            const itemTotal = priceAtSale * item.quantity;
+            totalSaleAmount += itemTotal;
 
             saleItemsData.push({
                 visitId: visit.id,
                 productId: product.id,
-                staffId: staffId, // Staff who processed the sale
+                staffId: staffId,
                 quantity: item.quantity,
-                priceAtSale: priceAtSale, // Store Decimal price per unit
-                totalAmount: itemTotal, // Store Decimal total for this line item
-                // Removed hostId, commissionEarned, paidWithCredit, paidWithCashCard
+                priceAtSale: priceAtSale,
+                totalAmount: itemTotal,
             });
-        }
-        const totalSaleAmountNumber = totalSaleAmount.toNumber(); // Convert for logs/commission calc if needed
 
+             if (product.inventoryItem && product.inventoryItemId && product.deductionAmountInSmallestUnit) {
+                const quantityChange = Number(product.deductionAmountInSmallestUnit) * item.quantity * -1;
+                 stockLedgerData.push({
+                     inventoryItemId: product.inventoryItemId,
+                     movementType: StockMovementType.sale,
+                     quantityChange: quantityChange,
+                     notes: `Venda de ${item.quantity}x ${product.name} (Visita ${visit.id})`,
+                 });
+             } else {
+                  console.warn(`Skipping stock deduction for product ID ${item.productId} in visit ${visit.id}. Missing link or amount.`);
+             }
+        }
 
         // --- 4. Create Transaction ---
-        const transactionResults = await prisma.$transaction([
-            // 1. Create all Sale records
-            prisma.sale.createMany({
-                data: saleItemsData,
-            }),
-
-            // 2. Update Client lifetime stats
+        const transactionPromises = [
+            prisma.sale.createMany({ data: saleItemsData }),
             prisma.client.update({
                 where: { id: clientId },
                 data: {
-                    lifetimeSpend: { increment: totalSaleAmount }, // Use Decimal directly
-                    lastVisitSpend: totalSaleAmount,              // Set Decimal directly
+                    lifetimeSpend: { increment: totalSaleAmount },
+                    lastVisitSpend: totalSaleAmount,
                     lastVisitDate: new Date(),
-                    // Increment totalVisits ONLY if this is the first sale for this visit?
-                    // Let's check if there were previous sales for this visit ID before this transaction
-                    // totalVisits: { increment: existingSalesCount === 0 ? 1 : 0 } // Needs pre-query, complex. Defer for now.
-                    // Keep it simple: update last visit date/spend. Analytics can derive visit count.
                 },
             }),
-
-            // 3. Log Staff commission (e.g., 2% of total - adjust rate as needed)
             prisma.staffCommission.create({
                 data: {
                     staffId: staffId,
-                    commissionType: "sale", // Use the enum value if defined, otherwise string
-                    amountEarned: totalSaleAmount.times(0.02), // Decimal calculation (2%)
-                    relatedSaleId: undefined, // Cannot easily link to createMany result IDs
-                    notes: `Comissão de 2% sobre venda de R$ ${totalSaleAmountNumber.toFixed(2)} na ${visit.seatingArea?.name || 'mesa ' + seatingAreaId}`, // Added context
+                    commissionType: "sale",
+                    amountEarned: totalSaleAmount * 0.02, // 2%
+                    relatedSaleId: undefined,
+                    notes: `Comissão de 2% sobre venda de R$ ${totalSaleAmount.toFixed(2)} na ${visit.seatingArea?.name || 'mesa ' + seatingAreaId}`,
                 }
             }),
-
-             // 4. Update Stock Ledger (Deduct inventory)
-             // Need to iterate through saleItemsData *after* product info is confirmed
-             ...saleItemsData.map(saleItem => {
-                 const product = products.find(p => p.id === saleItem.productId);
-                 if (!product || !product.inventoryItemId || !product.deductionAmountInSmallestUnit) {
-                     // If product doesn't exist, has no inventory link, or no deduction amount, skip ledger entry
-                     // Consider logging a warning here
-                     console.warn(`Skipping stock deduction for product ID ${saleItem.productId} in visit ${saleItem.visitId}. Missing inventory link or deduction amount.`);
-                     // Return a placeholder that doesn't cause a Prisma operation, like finding the product again which resolves quickly.
-                     // IMPORTANT: Returning `null` or `undefined` here will break $transaction.
-                     return prisma.product.findUnique({ where: { id: saleItem.productId } }); // Safe no-op within transaction
-                 }
-                 const quantityChangeDecimal = product.deductionAmountInSmallestUnit.times(saleItem.quantity).negated(); // Make it negative for deduction
-
-                 return prisma.stockLedger.create({
-                     data: {
-                         inventoryItemId: product.inventoryItemId,
-                         movementType: StockMovementType.sale,
-                         quantityChange: quantityChangeDecimal, // Use the calculated negative Decimal
-                         // Cannot link saleId directly here easily because of createMany
-                         notes: `Venda de ${saleItem.quantity}x ${product.name} (Visita ${saleItem.visitId})`,
-                     }
-                 });
-             })
-        ]);
+        ];
+        if (stockLedgerData.length > 0) {
+             transactionPromises.push(prisma.stockLedger.createMany({ data: stockLedgerData }));
+        }
+        const transactionResults = await prisma.$transaction(transactionPromises);
 
         // --- 5. Return Success ---
-        // Find the IDs of the sales created (requires another query after transaction)
-        // For MVP, just return success status.
-         const createdSalesResult = transactionResults[0]; // Result of createMany
+         const createdSalesResult = transactionResults[0];
          const salesCount = createdSalesResult?.count ?? 0;
 
         return NextResponse.json<ApiResponse<{ salesCreated: number }>>(
             { success: true, data: { salesCreated: salesCount } },
-            { status: 201 } // 201 Created
+            { status: 201 }
         );
 
     } catch (error: any) {

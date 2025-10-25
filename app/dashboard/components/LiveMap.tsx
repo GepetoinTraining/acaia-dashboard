@@ -4,24 +4,24 @@
 import { SimpleGrid, Paper, Title, Stack, Text, Group, Badge } from "@mantine/core";
 import { LiveClient } from "@/lib/types"; // Import the correct LiveClient type
 import { LiveClientCard } from "./LiveClientCard";
-// --- Ensure SeatingArea, Visit, Client imports are present ---
+// --- Explicitly import SeatingArea, Visit, Client ---
 import { SeatingArea, Visit, Client } from "@prisma/client";
 
 // Define the shape of the data coming from the API (including the nested visit info)
 // This type is used locally if needed, but the main data comes via props
 type SeatingAreaWithVisit = SeatingArea & {
+  // Use the imported Visit and Client types
   visits: (Visit & { client: Client | null })[];
 };
 
 type LiveMapProps = {
   activeVisits: LiveClient[];
-  // seatingAreas?: SeatingAreaWithVisit[]; // Optional: Pass areas to show occupancy map
+  // seatingAreas?: SeatingAreaWithVisit[]; // Optional
 };
 
 
 export function LiveMap({ activeVisits }: LiveMapProps) {
 
-  // Group visits by seatingAreaId for display (Optional Enhancement)
   const visitsByArea: { [key: number]: LiveClient[] } = {};
   const unassignedVisits: LiveClient[] = [];
 
@@ -37,7 +37,6 @@ export function LiveMap({ activeVisits }: LiveMapProps) {
           }
       }
   });
-
 
   return (
     <Paper withBorder p="md" radius="md">

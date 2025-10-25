@@ -23,10 +23,8 @@ import {
 } from "lucide-react";
 import { useDisclosure } from "@mantine/hooks";
 import { useState, useEffect, useCallback } from "react";
-// Import the specific type from lib/types
 import { ApiResponse, CartItem, SeatingAreaWithVisitInfo } from "@/lib/types";
-// Import base Prisma types + Enums needed
-import { Product, Visit, Client, SeatingArea, ProductType, PrepStation } from "@prisma/client";
+import { Product, Visit, Client, SeatingArea, ProductType, PrepStation, InventoryItem, Partner } from "@prisma/client"; // Added InventoryItem, Partner
 import { notifications } from "@mantine/notifications";
 import { SeatingAreaSelector } from "./components/SeatingAreaSelector";
 import { ProductSelector } from "./components/ProductSelector";
@@ -47,6 +45,12 @@ type ProductWithNumberPrices = Omit<Product, 'costPrice' | 'salePrice' | 'deduct
     costPrice: number;
     salePrice: number;
     deductionAmountInSmallestUnit: number;
+    // Relations might also need serialization if they contain Decimals
+    inventoryItem: (Omit<InventoryItem, 'storageUnitSizeInSmallest' | 'reorderThresholdInSmallest'> & {
+        storageUnitSizeInSmallest: number | null;
+        reorderThresholdInSmallest: number | null;
+    }) | null; // Match serialized InventoryItem type used elsewhere
+    partner: Partner | null; // Partner doesn't have Decimals
 };
 
 // Define the type for the simplified visit info used in this component's state
@@ -54,18 +58,25 @@ type ActiveVisitInfo = {
     id: number;
     clientId: number | null;
     client: { name: string | null } | null;
-} | null; // Allow null
+} | null;
+
+// Adjust CartItem to use ProductWithNumberPrices
+type CartItemWithNumberPrices = {
+    product: ProductWithNumberPrices;
+    quantity: number;
+};
+
 
 function PosClientPage() {
-  // --- FIX: Use ProductWithNumberPrices for state ---
+  // --- FIX: Initialize state with ProductWithNumberPrices[] ---
   const [products, setProducts] = useState<ProductWithNumberPrices[]>([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
   const [loadingSubmit, setLoadingSubmit] = useState(false);
 
   const [selectedArea, setSelectedArea] = useState<SeatingAreaWithVisitInfo | null>(null);
   const [activeVisitInfo, setActiveVisitInfo] = useState<ActiveVisitInfo>(null);
-  // --- FIX: CartItem product should also use ProductWithNumberPrices ---
-  const [cart, setCart] = useState<CartItem[]>([]); // CartItem type uses Product, adjust if needed
+  // --- FIX: Use CartItemWithNumberPrices for cart state ---
+  const [cart, setCart] = useState<CartItemWithNumberPrices[]>([]);
 
   const [submitModal, { open: openSubmitModal, close: closeSubmitModal }] =
     useDisclosure(false);
@@ -74,18 +85,13 @@ function PosClientPage() {
   const fetchProducts = useCallback(async () => {
     setLoadingProducts(true);
     try {
-      const response = await fetch("/api/products");
+      const response = await fetch("/api/products"); // API returns serialized Product[] with number prices
       if (!response.ok) throw new Error("Falha ao buscar produtos");
-      const result: ApiResponse<Product[]> = await response.json(); // API returns serialized Product[]
+      // Expect API to return data where Decimals are already numbers/strings
+      const result: ApiResponse<ProductWithNumberPrices[]> = await response.json();
       if (result.success && result.data) {
-          // Deserialize prices to numbers
-          const deserializedProducts: ProductWithNumberPrices[] = result.data.map(p => ({
-              ...p,
-              costPrice: Number(p.costPrice || 0),
-              salePrice: Number(p.salePrice || 0),
-              deductionAmountInSmallestUnit: Number(p.deductionAmountInSmallestUnit || 1),
-          }));
-        setProducts(deserializedProducts); // Set state with correct type
+          // Data from API should already match ProductWithNumberPrices if API serialization is correct
+          setProducts(result.data); // Directly set the state
       } else {
         throw new Error(result.error || "Não foi possível carregar produtos");
       }
@@ -126,12 +132,13 @@ function PosClientPage() {
 
   // Calculate cart total (using number prices)
   const cartTotal = cart.reduce(
-    (acc, item) => acc + (item.product.salePrice * item.quantity), // Direct multiplication
+    (acc, item) => acc + (item.product.salePrice * item.quantity), // Direct multiplication is now safe
     0
   );
 
   // Handle order submission
   const handleSubmitOrder = async () => {
+     // ... (submission logic remains the same) ...
      if (!selectedArea) {
          notifications.show({ title: "Erro", message: "Nenhuma mesa selecionada.", color: "red" });
          return;
@@ -161,14 +168,8 @@ function PosClientPage() {
 
   const clientName = activeVisitInfo?.client?.name || (activeVisitInfo ? `Cliente Anônimo (Visita #${activeVisitInfo.id})` : "Nenhum cliente ativo");
 
-  // --- FIX: Adjust CartItem type if necessary ---
-  // The Cart component expects CartItem[], where CartItem has a 'product: Product'.
-  // Since our 'products' state uses ProductWithNumberPrices, we need consistency.
-  // Option 1: Update CartItem definition in lib/types.ts to use ProductWithNumberPrices (or a similar serialized type).
-  // Option 2: Cast the product when adding to cart (less type-safe).
-  // Let's assume Cart component can handle number prices (as it uses Number() internally).
-  // The type mismatch might be ignored by TS if structures are similar enough, but explicit typing is better.
-  const handleAddProduct = (product: ProductWithNumberPrices) => {
+   // --- FIX: Use ProductWithNumberPrices in handler ---
+   const handleAddProduct = (product: ProductWithNumberPrices) => {
        setCart((currentCart) => {
            const existing = currentCart.find((i) => i.product.id === product.id);
            if (existing) {
@@ -178,17 +179,16 @@ function PosClientPage() {
                        : i
                );
            }
-           // Explicitly create CartItem, ensure product matches CartItem's expected product type
-           // If CartItem expects Prisma's Product (with Decimal), conversion needed here.
-           // Assuming Cart handles number prices:
-           return [...currentCart, { product: product as Product, quantity: 1 }]; // Use type assertion
+           // Add directly using the correct type
+           return [...currentCart, { product: product, quantity: 1 }];
        });
    };
 
 
   return (
     <>
-      <SubmitOrderModal opened={submitModal} onClose={closeSubmitModal} onSubmit={handleSubmitOrder} seatingAreaName={selectedArea?.name || ''} clientName={clientName} cart={cart} total={cartTotal} loading={loadingSubmit} />
+      {/* --- FIX: Pass CartItemWithNumberPrices[] to modal and cart --- */}
+      <SubmitOrderModal opened={submitModal} onClose={closeSubmitModal} onSubmit={handleSubmitOrder} seatingAreaName={selectedArea?.name || ''} clientName={clientName} cart={cart as CartItem[]} total={cartTotal} loading={loadingSubmit} />
       <Stack>
         <PageHeader title="Nova Comanda" />
         <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="md">
@@ -199,7 +199,8 @@ function PosClientPage() {
               <SeatingAreaSelector selectedAreaId={selectedArea?.id || null} onSelect={handleSelectArea} disabled={loadingProducts} />
               {selectedArea && (<Text size="sm" c="dimmed">Cliente Atual: {clientName}</Text>)}
               <Group gap="xs" mt="lg" mb="sm"><Package size={24} /><Title order={4}>2. Adicionar Produtos</Title></Group>
-              <ProductSelector products={products as Product[]} loading={loadingProducts} onAddProduct={handleAddProduct} /> {/* Assert products type */}
+              {/* --- FIX: Pass ProductWithNumberPrices[] to selector --- */}
+              <ProductSelector products={products as Product[]} loading={loadingProducts} onAddProduct={handleAddProduct} />
             </Stack>
           </Paper>
           {/* RIGHT COLUMN */}
@@ -210,7 +211,9 @@ function PosClientPage() {
                 <Button variant="outline" color="red" size="xs" onClick={resetOrder} leftSection={<Trash2 size={14}/>} disabled={cart.length === 0 && !selectedArea}>Limpar</Button>
               </Group>
               <Stack h="100%" justify="space-between" style={{ flexGrow: 1}}>
-                <Cart cart={cart} onSetCart={setCart} />
+                 {/* --- FIX: Pass CartItemWithNumberPrices[] to Cart --- */}
+                 {/* Ensure Cart component handles number prices */}
+                <Cart cart={cart as CartItem[]} onSetCart={setCart as (cart: CartItem[]) => void} />
                 <Stack mt="md">
                   <Divider />
                   <Group justify="space-between"><Text size="xl" fw={700}>Total:</Text><Text size="xl" fw={700} c="pastelGreen.9">R$ {cartTotal.toFixed(2)}</Text></Group>

@@ -188,7 +188,7 @@ export async function GET(req: NextRequest) {
             quantity: ing.quantity.toString(),
             ingredient: {
                 ...ing.ingredient,
-                stock: ing.ingredient.stock.toString(),
+                // REMOVED: stock: ing.ingredient.stock.toString(), // Ingredient model doesn't have 'stock'
                 costPerUnit: ing.ingredient.costPerUnit.toString(),
             }
         }))

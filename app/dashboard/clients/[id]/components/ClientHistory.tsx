@@ -3,7 +3,7 @@
 
 "use client";
 
-import { Tabs, Table, Text, Group, Badge, Accordion } from "@mantine/core";
+import { Tabs, Table, Text, Group, Badge, Accordion, Title } from "@mantine/core";
 import {
   IconHistory,
   IconShoppingCart,

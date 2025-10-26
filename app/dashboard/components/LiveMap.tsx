@@ -4,39 +4,39 @@
 import { SimpleGrid, Paper, Title, Stack, Text, Group, Badge } from "@mantine/core";
 import { LiveClient } from "@/lib/types"; // Import the correct LiveClient type
 import { LiveClientCard } from "./LiveClientCard";
-// --- Explicitly import SeatingArea, Visit, Client ---
-import { SeatingArea, Visit, Client } from "@prisma/client";
-
-// Define the shape of the data coming from the API (including the nested visit info)
-// This type is used locally if needed, but the main data comes via props
-type SeatingAreaWithVisit = SeatingArea & {
-  // Use the imported Visit and Client types
-  visits: (Visit & { client: Client | null })[];
-};
+// --- REMOVED: import { SeatingArea, Visit, Client } from "@prisma/client"; ---
+// --- REMOVED: Unused local type definition ---
+// type SeatingAreaWithVisit = SeatingArea & { ... };
 
 type LiveMapProps = {
   activeVisits: LiveClient[];
-  // seatingAreas?: SeatingAreaWithVisit[]; // Optional
+  // --- REMOVED: Unused optional prop ---
+  // seatingAreas?: SeatingAreaWithVisit[];
 };
 
 
 export function LiveMap({ activeVisits }: LiveMapProps) {
 
-  const visitsByArea: { [key: number]: LiveClient[] } = {};
+  // --- Keep this logic commented out or remove if not needed ---
+  // const visitsByArea: { [key: number]: LiveClient[] } = {};
   const unassignedVisits: LiveClient[] = [];
 
   (activeVisits || []).forEach(visit => {
-      if (visit?.seatingAreaId) {
-          if (!visitsByArea[visit.seatingAreaId]) {
-              visitsByArea[visit.seatingAreaId] = [];
-          }
-          visitsByArea[visit.seatingAreaId].push(visit);
+      // Use venueObjectId from LiveClient type
+      if (visit?.venueObjectId) {
+          // Logic for grouping by area would go here if needed
+          // if (!visitsByArea[visit.venueObjectId]) { // Use string ID
+          //     visitsByArea[visit.venueObjectId] = [];
+          // }
+          // visitsByArea[visit.venueObjectId].push(visit);
       } else {
+          // Collect visits without an associated venue object
           if (visit) {
               unassignedVisits.push(visit);
           }
       }
   });
+  // --- End commented/removed logic ---
 
   return (
     <Paper withBorder p="md" radius="md">
@@ -47,15 +47,17 @@ export function LiveMap({ activeVisits }: LiveMapProps) {
       <Stack>
         {(activeVisits?.length ?? 0) > 0 ? (
           activeVisits.map((client) => (
+            // LiveClientCard uses seatingAreaName from LiveClient type if available
             <LiveClientCard key={client.visitId} client={client} />
           ))
         ) : (
           <Text c="dimmed">Nenhum cliente na casa.</Text>
         )}
       </Stack>
+       {/* Display clients who checked in but haven't scanned a location QR code */}
        {unassignedVisits.length > 0 && (
            <>
-                <Title order={5} mt="md">Clientes Aguardando Mesa ({unassignedVisits.length})</Title>
+                <Title order={5} mt="md">Clientes Aguardando Localização ({unassignedVisits.length})</Title>
                 <Stack mt="xs">
                     {unassignedVisits.map(client => (
                         <LiveClientCard key={client.visitId} client={client} />

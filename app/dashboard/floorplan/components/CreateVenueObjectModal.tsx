@@ -68,13 +68,19 @@ export function CreateVenueObjectModal({
         (values.type as VenueObjectType) === VenueObjectType.WORKSTATION && !value
           ? "Estação é obrigatória para este tipo"
           : null,
+      // ---- START FIX for build error ----
       capacity: (val, values) => {
-           // FIX: Cast values.type here
-           if (![VenueObjectType.TABLE, VenueObjectType.BAR_SEAT].includes(values.type as VenueObjectType)) return null;
+           const currentType = values.type as VenueObjectType; // Get the type
+           // Check if the type is NOT TABLE and NOT BAR_SEAT
+           if (currentType !== VenueObjectType.TABLE && currentType !== VenueObjectType.BAR_SEAT) {
+               return null; // Capacity validation doesn't apply
+           }
+           // Existing validation logic for TABLE or BAR_SEAT
            if (val === null || val === '') return "Capacidade é obrigatória para este tipo";
            const num = Number(val);
            return isNaN(num) || num < 1 ? "Capacidade deve ser 1 ou maior" : null;
       },
+      // ---- END FIX for build error ----
       reservationCost: (val, values) => {
            // FIX: Cast values.type here
            if ((values.type as VenueObjectType) !== VenueObjectType.TABLE || !values.isReservable) return null;
@@ -113,8 +119,8 @@ export function CreateVenueObjectModal({
             type: currentType,
             anchorX: 0,
             anchorY: 0,
-            // FIX: Cast currentType here
-            capacity: [VenueObjectType.TABLE, VenueObjectType.BAR_SEAT].includes(currentType) && values.capacity !== '' ? Number(values.capacity) : null,
+            // Check type directly for capacity inclusion
+            capacity: (currentType === VenueObjectType.TABLE || currentType === VenueObjectType.BAR_SEAT) && values.capacity !== '' ? Number(values.capacity) : null,
             isReservable: currentType === VenueObjectType.TABLE ? values.isReservable : false,
             reservationCost: (currentType === VenueObjectType.TABLE && values.isReservable && values.reservationCost !== '') ? Number(values.reservationCost).toString() : null,
             workstationId: currentType === VenueObjectType.WORKSTATION ? values.workstationId : null,
@@ -185,8 +191,8 @@ export function CreateVenueObjectModal({
                  if (selectedType !== VenueObjectType.WORKSTATION) {
                      form.setFieldValue('workstationId', null);
                  }
-                 // FIX: Cast selectedType here
-                 if (!selectedType || ![VenueObjectType.TABLE, VenueObjectType.BAR_SEAT].includes(selectedType as VenueObjectType)) {
+                 // Check type directly
+                 if (!selectedType || (selectedType !== VenueObjectType.TABLE && selectedType !== VenueObjectType.BAR_SEAT)) {
                      form.setFieldValue('capacity', '');
                  }
                  if (selectedType !== VenueObjectType.TABLE) {
@@ -212,8 +218,8 @@ export function CreateVenueObjectModal({
             />
           )}
 
-          {/* FIX: Cast formValues.type */}
-          {[VenueObjectType.TABLE, VenueObjectType.BAR_SEAT].includes(formValues.type as VenueObjectType) && (
+          {/* Check type directly */}
+          {(formValues.type === VenueObjectType.TABLE || formValues.type === VenueObjectType.BAR_SEAT) && (
             <NumberInput
               required
               label="Capacidade (lugares)"

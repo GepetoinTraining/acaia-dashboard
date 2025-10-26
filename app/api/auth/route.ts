@@ -1,13 +1,14 @@
+// PATH: app/api/auth/route.ts
 import { prisma } from "@/lib/prisma";
 import { compare } from "bcryptjs";
-import { getSession, sessionOptions } from "@/lib/auth";
-import { StaffSession, ApiResponse } from "@/lib/types";
+import { getSession, sessionOptions, UserSession } from "@/lib/auth"; // Import UserSession from auth
+import { ApiResponse } from "@/lib/types"; // Keep ApiResponse, it's a generic wrapper
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
 /**
  * POST /api/auth
- * Handles Staff login by PIN
+ * Handles User login by PIN
  */
 export async function POST(req: NextRequest) {
   try {
@@ -20,27 +21,23 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Find all staff (in a real app, optimize this, but for PINs it's tricky)
-    // This is not performant, but PINs aren't unique.
-    // A better way: require PIN + Name, or make PINs unique.
-    // For this model, we'll assume PINs are NOT unique and find all matches.
-    
-    // Let's change the logic: We'll find the *first* active staff member
-    // whose PIN matches. `pinCode` field in schema is unique.
-    
-    const staffList = await prisma.staff.findMany({ where: { isActive: true } });
-    let authenticatedStaff = null;
+    // Find all active users.
+    // This is still not highly performant, but required if PINs are not unique.
+    // If PINs are unique, this can be changed to a single findUnique query.
+    const userList = await prisma.user.findMany({ where: { isActive: true } });
+    let authenticatedUser = null;
 
-    for (const staff of staffList) {
-      if (staff.pinCode && (await compare(pin, staff.pinCode))) {
-        authenticatedStaff = staff;
+    for (const user of userList) {
+      // Use the new 'pin' field on the 'User' model
+      if (user.pin && (await compare(pin, user.pin))) {
+        authenticatedUser = user;
         break;
       }
     }
 
-    if (!authenticatedStaff) {
+    if (!authenticatedUser) {
       return NextResponse.json<ApiResponse>(
-        { success: false, error: "PIN inválido ou staff inativo" },
+        { success: false, error: "PIN inválido ou usuário inativo" },
         { status: 401 }
       );
     }
@@ -49,16 +46,16 @@ export async function POST(req: NextRequest) {
     const session = await getSession();
 
     // Save user data in the session
-    session.staff = {
-      id: authenticatedStaff.id,
-      name: authenticatedStaff.name,
-      role: authenticatedStaff.defaultRole,
+    session.user = {
+      id: authenticatedUser.id,
+      name: authenticatedUser.name,
+      role: authenticatedUser.role, // Use the new 'role' field
       isLoggedIn: true,
     };
     await session.save();
 
-    return NextResponse.json<ApiResponse<StaffSession>>(
-      { success: true, data: session.staff },
+    return NextResponse.json<ApiResponse<UserSession>>(
+      { success: true, data: session.user },
       { status: 200 }
     );
   } catch (error) {
@@ -72,7 +69,7 @@ export async function POST(req: NextRequest) {
 
 /**
  * DELETE /api/auth
- * Handles Staff logout
+ * Handles User logout
  */
 export async function DELETE(req: NextRequest) {
   try {

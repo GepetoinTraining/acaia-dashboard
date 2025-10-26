@@ -1,36 +1,49 @@
+// PATH: app/dashboard/staff/page.tsx
 "use client";
 
-import { prisma } from "@/lib/prisma";
-import { Staff } from "@prisma/client";
-import { Button, Stack, Title } from "@mantine/core";
-import { useDisclosure } from "@mantine/hooks";
-import { CreateStaffModal } from "./components/CreateStaffModal";
-import { StaffTable } from "./components/StaffTable";
-import { PageHeader } from "../components/PageHeader";
-import { UserPlus } from "lucide-react";
 import { useState, useEffect } from "react";
+import { Button, Container, Title, Stack } from "@mantine/core";
+import { IconPlus } from "@tabler/icons-react";
+import { User, Workstation } from "@prisma/client"; // Import the new User type
+import { PageHeader } from "../components/PageHeader";
+import { StaffTable } from "./components/StaffTable"; // This component will also be refactored
+import { CreateStaffModal } from "./components/CreateStaffModal"; // This component will also be refactored
 import { ApiResponse } from "@/lib/types";
+import { notifications } from "@mantine/notifications";
 
-// This component fetches data on the client side for reactivity
-function StaffClientPage() {
-  const [staff, setStaff] = useState<Staff[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [opened, { open, close }] = useDisclosure(false);
+// Define a type for User with assignments included, based on the API response
+export type UserWithWorkstation = User & {
+  workstation: Workstation | null; // This is the simplified structure from the GET API
+};
+
+export default function StaffPage() {
+  const [staff, setStaff] = useState<UserWithWorkstation[]>([]); // Use the new type
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   const fetchStaff = async () => {
-    setLoading(true);
+    setIsLoading(true);
     try {
       const response = await fetch("/api/staff");
-      if (!response.ok) throw new Error("Failed to fetch staff");
-      const result: ApiResponse<Staff[]> = await response.json();
-      if (result.success && result.data) {
-        setStaff(result.data);
+      const data: ApiResponse<UserWithWorkstation[]> = await response.json();
+      if (data.success && data.data) {
+        setStaff(data.data);
+      } else {
+        notifications.show({
+          title: "Erro",
+          message: data.error || "Falha ao carregar equipe",
+          color: "red",
+        });
       }
     } catch (error) {
-      console.error(error);
-      // TODO: Show notification
+      console.error("Fetch staff error:", error);
+      notifications.show({
+        title: "Erro",
+        message: "Falha ao carregar equipe",
+        color: "red",
+      });
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
@@ -39,35 +52,30 @@ function StaffClientPage() {
   }, []);
 
   return (
-    <>
+    <Container fluid>
+      <Stack gap="lg">
+        <PageHeader title="Equipe" />
+        <Button
+          leftSection={<IconPlus size={14} />}
+          onClick={() => setIsModalOpen(true)}
+          w={200}
+        >
+          Novo Membro
+        </Button>
+        <StaffTable
+          data={staff}
+          isLoading={isLoading}
+          onRefresh={fetchStaff}
+        />
+      </Stack>
       <CreateStaffModal
-        opened={opened}
-        onClose={close}
+        opened={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
         onSuccess={() => {
-          close();
-          fetchStaff(); // Refresh the table
+          setIsModalOpen(false);
+          fetchStaff();
         }}
       />
-      <Stack>
-        <PageHeader
-          title="Equipe (Staff)"
-          actionButton={
-            <Button
-              leftSection={<UserPlus size={16} />}
-              onClick={open}
-              color="privacyGold"
-            >
-              Adicionar Staff
-            </Button>
-          }
-        />
-        <StaffTable staff={staff} loading={loading} />
-      </Stack>
-    </>
+    </Container>
   );
-}
-
-// We wrap the client component in a default export
-export default function StaffPage() {
-  return <StaffClientPage />;
 }

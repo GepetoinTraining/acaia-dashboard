@@ -1,46 +1,57 @@
-import { prisma } from "@/lib/prisma"; // Adjust path if needed
-import { getSession } from "@/lib/auth"; // Adjust path if needed
-import { ApiResponse } from "@/lib/types"; // Adjust path if needed
+// PATH: app/api/staff/route.ts
+import { prisma } from "@/lib/prisma";
+import { ApiResponse } from "@/lib/types";
 import { NextRequest, NextResponse } from "next/server";
 import { hash } from "bcryptjs";
-// Import Staff and StaffRole from prisma client for Acaia schema
-import { Staff, StaffRole, Prisma } from "@prisma/client";
+import { Role, User, VenueObject, Workstation } from "@prisma/client"; // Import User and Role
 
 /**
  * GET /api/staff
- * Fetches all staff members.
+ * Fetches all users (staff) including their workstation assignments
  */
 export async function GET(req: NextRequest) {
-  const session = await getSession();
-  if (!session.staff?.isLoggedIn) {
-    return NextResponse.json<ApiResponse>(
-      { success: false, error: "Não autorizado" },
-      { status: 401 }
-    );
-  }
-
   try {
-    // Exclude pincode hash from the response for security
-    const staff = await prisma.staff.findMany({
-      orderBy: { name: "asc" },
-      select: {
-          id: true,
-          name: true,
-          defaultRole: true,
-          isActive: true,
-          createdAt: true,
-          // Explicitly exclude pinCode
-      }
+    const users = await prisma.user.findMany({
+      include: {
+        assignedWorkstations: {
+          // Include the StaffAssignment join table
+          include: {
+            venueObject: {
+              // From the join table, get the VenueObject
+              include: {
+                workstation: true, // From the VenueObject, get the related Workstation
+              },
+            },
+          },
+        },
+      },
     });
-    // Cast needed because select changes the type
-    return NextResponse.json<ApiResponse<Partial<Staff>[]>>(
-      { success: true, data: staff },
+
+    // We need to shape the data to be more useful for the client
+    const formattedUsers = users.map((user) => {
+      // Find the first assignment that points to a venue object
+      // that is linked to a workstation.
+      const workstationAssignment = user.assignedWorkstations.find(
+        (assignment) => assignment.venueObject?.workstation
+      );
+
+      return {
+        ...user,
+        // Simplify the structure for the client
+        workstation: workstationAssignment
+          ? workstationAssignment.venueObject.workstation
+          : null,
+      };
+    });
+
+    return NextResponse.json<ApiResponse<any[]>>(
+      { success: true, data: formattedUsers },
       { status: 200 }
     );
   } catch (error) {
-    console.error("GET /api/staff error:", error);
+    console.error("Error fetching users:", error);
     return NextResponse.json<ApiResponse>(
-      { success: false, error: "Erro ao buscar equipe" },
+      { success: false, error: "Erro interno do servidor" },
       { status: 500 }
     );
   }
@@ -48,105 +59,86 @@ export async function GET(req: NextRequest) {
 
 /**
  * POST /api/staff
- * Creates a new staff member.
+ * Creates a new user (staff)
  */
 export async function POST(req: NextRequest) {
-  const session = await getSession();
-  // TODO: Add stricter role check (e.g., only Manager/Admin can create staff)
-  // if (!session.staff?.isLoggedIn || (session.staff.role !== StaffRole.Manager && session.staff.role !== StaffRole.Admin)) {
-  if (!session.staff?.isLoggedIn) {
-    return NextResponse.json<ApiResponse>(
-      { success: false, error: "Não autorizado" },
-      { status: 401 }
-    );
-  }
-
   try {
-    const { name, role, pin } = (await req.json()) as {
-      name: string;
-      role: StaffRole; // Use updated StaffRole enum
-      pin: string;
-    };
+    const body = await req.json();
+    // workstationId from the form is the Workstation.id
+    const { name, email, pin, role, workstationId } = body;
 
-    // --- Basic Input Validation ---
-    if (!name || !role || !pin) {
+    if (!name || !email || !pin || !role) {
       return NextResponse.json<ApiResponse>(
-        { success: false, error: "Campos obrigatórios faltando (Nome, Cargo, PIN)" },
+        { success: false, error: "Nome, email, PIN e função são obrigatórios" },
         { status: 400 }
       );
     }
-    if (name.trim().length < 2) {
+
+    // Validate Role
+    if (!Object.values(Role).includes(role as Role)) {
+      return NextResponse.json<ApiResponse>(
+        { success: false, error: "Função inválida" },
+        { status: 400 }
+      );
+    }
+
+    // Hash the PIN
+    const hashedPin = await hash(pin, 10);
+
+    // Find the *VenueObject* that represents the selected *Workstation*
+    let workstationVenueObject: VenueObject | null = null;
+    if (workstationId) {
+      workstationVenueObject = await prisma.venueObject.findFirst({
+        where: {
+          workstationId: workstationId,
+          type: "WORKSTATION", // Ensure it's the correct type
+        },
+      });
+      
+      if (!workstationVenueObject) {
          return NextResponse.json<ApiResponse>(
-           { success: false, error: "Nome inválido." },
-           { status: 400 }
-         );
-    }
-    if (!Object.values(StaffRole).includes(role)) {
-        return NextResponse.json<ApiResponse>(
-          { success: false, error: "Cargo inválido." },
-          { status: 400 }
+          { success: false, error: "Estação de trabalho (VenueObject) não encontrada." },
+          { status: 404 }
         );
+      }
     }
 
-    // --- Added 6-digit PIN Validation ---
-    if (!/^\d{6}$/.test(pin)) {
-       return NextResponse.json<ApiResponse>(
-         { success: false, error: "PIN inválido. Deve conter exatamente 6 dígitos." },
-         { status: 400 }
-       );
-    }
-    // --- End Added Check ---
-
-    // Encrypt the PIN before saving
-    const hashedPin = await hash(pin, 12); // Using bcryptjs
-
-    const newStaff = await prisma.staff.create({
+    // Create the user and optionally assign them to a workstation
+    const newUser = await prisma.user.create({
       data: {
         name,
-        defaultRole: role,
-        pinCode: hashedPin, // Store the hashed PIN
-        isActive: true, // Default to active
+        email,
+        pin: hashedPin,
+        role: role as Role,
+        // Create the StaffAssignment record if a workstation was found
+        assignedWorkstations: workstationVenueObject
+          ? {
+              create: {
+                venueObjectId: workstationVenueObject.id,
+              },
+            }
+          : undefined,
       },
-      // Select only non-sensitive fields to return
-      select: {
-          id: true,
-          name: true,
-          defaultRole: true,
-          isActive: true,
-          createdAt: true,
-      }
+      include: {
+        assignedWorkstations: true, // Return the new assignment
+      },
     });
 
-    // Cast needed because select changes the type
-    return NextResponse.json<ApiResponse<Partial<Staff>>>(
-      { success: true, data: newStaff },
-      { status: 201 } // 201 Created status
+    return NextResponse.json<ApiResponse<User>>(
+      { success: true, data: newUser },
+      { status: 201 }
     );
-
   } catch (error: any) {
-    console.error("POST /api/staff error:", error);
-    // Handle potential unique constraint errors (e.g., duplicate name or PIN)
-     if (error instanceof Prisma.PrismaClientKnownRequestError) {
-         if (error.code === 'P2002') {
-             // Check which field caused the error
-             const target = error.meta?.target as string[] | undefined;
-             let field = "campo";
-             if (target?.includes('name')) field = "Nome";
-             if (target?.includes('pinCode')) field = "PIN";
-
-             return NextResponse.json<ApiResponse>(
-                 { success: false, error: `Este ${field} já está em uso.` },
-                 { status: 409 } // 409 Conflict status
-             );
-         }
-     }
-    // Generic error for other issues
+    console.error("Error creating user:", error);
+    if (error.code === "P2002" && error.meta?.target.includes("email")) {
+      return NextResponse.json<ApiResponse>(
+        { success: false, error: "Este email já está em uso" },
+        { status: 409 } // 409 Conflict
+      );
+    }
     return NextResponse.json<ApiResponse>(
-      { success: false, error: "Erro interno ao criar funcionário." },
+      { success: false, error: "Erro interno do servidor" },
       { status: 500 }
     );
   }
 }
-
-// TODO: Add PATCH /api/staff/[id] for updating staff (role, isActive, pin reset?)
-// TODO: Add DELETE /api/staff/[id] for deactivating/removing staff (soft delete recommended)

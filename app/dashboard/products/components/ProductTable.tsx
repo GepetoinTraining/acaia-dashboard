@@ -1,97 +1,98 @@
+// PATH: app/dashboard/products/components/ProductTable.tsx
 "use client";
 
-import { Table, Badge, Text, Center, Loader, Group } from "@mantine/core";
-// Import the specific type alias used in the page component
-import { ProductWithRelations } from "../page";
-import dayjs from "dayjs";
-// Import Decimal for type safety if needed, though Number() conversion handles it
-import { Prisma } from "@prisma/client";
+import { Table, Badge, ActionIcon, Tooltip, Text, Loader } from "@mantine/core";
+import { IconPencil, IconTrash } from "@tabler/icons-react";
+import { ProductType } from "@prisma/client"; // Import enum
+import { ProductWithWorkstation } from "../page"; // Import the extended type
+import { formatCurrency } from "@/lib/utils"; // Assuming you have this util
 
-type ProductTableProps = {
-  products: ProductWithRelations[];
-  loading: boolean;
+interface ProductTableProps {
+  data: ProductWithWorkstation[];
+  isLoading: boolean;
+  onRefresh: () => void;
+  // TODO: Add onEdit and onDelete handlers
+}
+
+// Helper function to format ProductType
+const formatProductType = (type: ProductType) => {
+  switch (type) {
+    case ProductType.FOOD:
+      return "Comida";
+    case ProductType.DRINK:
+      return "Bebida";
+    default:
+      return type;
+  }
 };
 
-export function ProductTable({ products, loading }: ProductTableProps) {
-  const rows = products.map((item) => {
-    const isConsignment = !!item.partner;
-
-    // Convert Decimals to numbers for calculation
-    const salePriceNum = Number(item.salePrice);
-    const costPriceNum = Number(item.costPrice);
-
-    // Perform calculation with numbers
-    const profitMargin =
-      salePriceNum > 0 // Compare numbers
-        ? ((salePriceNum - costPriceNum) / salePriceNum) * 100 // Calculate with numbers
-        : 0;
-
+export function ProductTable({
+  data,
+  isLoading,
+  onRefresh,
+}: ProductTableProps) {
+  const rows = data.map((product) => {
     return (
-      <Table.Tr key={item.id}>
+      <Table.Tr key={product.id}>
+        <Table.Td>{product.name}</Table.Td>
+        <Table.Td>{product.description || "N/A"}</Table.Td>
         <Table.Td>
-          <Text fw={500}>{item.name}</Text>
-          <Text size="xs" c="dimmed">
-            {item.category || "Sem categoria"}
-          </Text>
+          {/* Note: product.price is now a string from the API */}
+          {formatCurrency(parseFloat(product.price as any))}
         </Table.Td>
         <Table.Td>
-          <Badge color={isConsignment ? "grape" : "blue"} variant="light">
-            {isConsignment ? `Consignado (${item.partner?.companyName})` : "Estoque Próprio"}
+          <Badge color={product.type === ProductType.DRINK ? "blue" : "orange"}>
+            {formatProductType(product.type)}
           </Badge>
         </Table.Td>
         <Table.Td>
-          {/* Display original Decimal formatted as currency */}
-          <Text>R$ {salePriceNum.toFixed(2)}</Text>
+          {/* Display the name of the prep station */}
+          {product.prepStation ? (
+            <Badge color="gray">{product.prepStation.name}</Badge>
+          ) : (
+            "N/A"
+          )}
         </Table.Td>
         <Table.Td>
-           {/* Display original Decimal formatted as currency */}
-          <Text c="dimmed">R$ {costPriceNum.toFixed(2)}</Text>
-        </Table.Td>
-        <Table.Td>
-          <Text c={profitMargin > 0 ? "green" : "red"} fw={500}>
-            {/* Display calculated number */}
-            {profitMargin.toFixed(1)}%
-          </Text>
-        </Table.Td>
-        <Table.Td>
-          <Text size="sm">
-            {item.inventoryItem?.name || "Não vinculado"}
-          </Text>
+          <Tooltip label="Editar">
+            <ActionIcon variant="transparent" color="blue">
+              <IconPencil size={18} />
+            </ActionIcon>
+          </Tooltip>
+          <Tooltip label="Remover">
+            <ActionIcon variant="transparent" color="red">
+              <IconTrash size={18} />
+            </ActionIcon>
+          </Tooltip>
         </Table.Td>
       </Table.Tr>
     );
   });
 
+  if (isLoading) {
+    return <Loader />;
+  }
+
   return (
-    <Table.ScrollContainer minWidth={800}>
-      <Table verticalSpacing="sm" striped highlightOnHover withTableBorder>
+    <Table.ScrollContainer minWidth={700}>
+      <Table verticalSpacing="sm" striped highlightOnHover>
         <Table.Thead>
           <Table.Tr>
-            <Table.Th>Produto</Table.Th>
+            <Table.Th>Nome</Table.Th>
+            <Table.Th>Descrição</Table.Th>
+            <Table.Th>Preço</Table.Th>
             <Table.Th>Tipo</Table.Th>
-            <Table.Th>Preço Venda (R$)</Table.Th>
-            <Table.Th>Custo/Dívida (R$)</Table.Th>
-            <Table.Th>Margem</Table.Th>
-            <Table.Th>Item de Estoque</Table.Th>
+            <Table.Th>Estação de Preparo</Table.Th>
+            <Table.Th>Ações</Table.Th>
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
-          {loading ? (
-            <Table.Tr>
-              <Table.Td colSpan={6}>
-                <Center h={200}>
-                  <Loader color="privacyGold" />
-                </Center>
-              </Table.Td>
-            </Table.Tr>
-          ) : rows.length > 0 ? (
+          {rows.length > 0 ? (
             rows
           ) : (
             <Table.Tr>
               <Table.Td colSpan={6}>
-                <Text ta="center" c="dimmed" py="lg">
-                  Nenhum produto cadastrado.
-                </Text>
+                <Text ta="center">Nenhum produto encontrado</Text>
               </Table.Td>
             </Table.Tr>
           )}

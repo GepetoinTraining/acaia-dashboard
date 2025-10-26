@@ -125,7 +125,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
 
 
         // Handle inputs update (delete existing, create new)
-        let inputsToCreate: Prisma.PrepRecipeInputCreateManyInput[] | undefined = undefined;
+        let inputsToCreate: Prisma.PrepRecipeInputCreateManyPrepRecipeInput[] | undefined = undefined;
         if (inputs !== undefined) {
              if (inputs.length === 0) {
                  return NextResponse.json<ApiResponse>({ success: false, error: "Receita de preparo deve ter pelo menos um ingrediente de entrada." }, { status: 400 });

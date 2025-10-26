@@ -1,47 +1,39 @@
-// PATH: app/dashboard/inventory/page.tsx
-// NOTE: This is a NEW FILE in a NEW FOLDER.
-
+// PATH: app/dashboard/ingredients/page.tsx
 "use client";
 
 import { useState, useEffect } from "react";
 import { Button, Container, Stack, Group } from "@mantine/core";
-import { IconPlus, IconStackPush } from "@tabler/icons-react";
+import { IconPlus } from "@tabler/icons-react";
+// Import Ingredient type directly from Prisma client as it only holds definition
 import { Ingredient } from "@prisma/client";
 import { PageHeader } from "../components/PageHeader";
-import { IngredientTable } from "./components/IngredientTable";
-import { CreateIngredientModal } from "./components/CreateIngredientModal";
-import { UpdateStockModal } from "./components/UpdateStockModal"; // New modal
+import { IngredientTable } from "./components/IngredientTable"; // Updated path
+import { CreateIngredientModal } from "./components/CreateIngredientModal"; // Updated path
 import { ApiResponse } from "@/lib/types";
 import { notifications } from "@mantine/notifications";
 
-// The API returns stock and cost as strings
-export type SerializedIngredient = Omit<
-  Ingredient,
-  "stock" | "costPerUnit"
-> & {
-  stock: string;
+// Type from API (cost is string)
+export type SerializedIngredientDef = Omit<Ingredient, "costPerUnit"> & {
   costPerUnit: string;
 };
 
-export default function InventoryPage() {
-  const [ingredients, setIngredients] = useState<SerializedIngredient[]>([]);
+export default function IngredientsPage() {
+  const [ingredients, setIngredients] = useState<SerializedIngredientDef[]>([]);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [isUpdateStockModalOpen, setIsUpdateStockModalOpen] = useState(false);
-  const [selectedIngredient, setSelectedIngredient] =
-    useState<SerializedIngredient | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   const fetchIngredients = async () => {
     setIsLoading(true);
     try {
+      // Fetch definitions from the refactored ingredients route
       const response = await fetch("/api/ingredients");
-      const data: ApiResponse<SerializedIngredient[]> = await response.json();
+      const data: ApiResponse<SerializedIngredientDef[]> = await response.json();
       if (data.success && data.data) {
         setIngredients(data.data);
       } else {
         notifications.show({
           title: "Erro",
-          message: data.error || "Falha ao carregar ingredientes",
+          message: data.error || "Falha ao carregar definições de ingredientes",
           color: "red",
         });
       }
@@ -49,7 +41,7 @@ export default function InventoryPage() {
       console.error("Fetch ingredients error:", error);
       notifications.show({
         title: "Erro",
-        message: "Falha ao carregar ingredientes",
+        message: "Falha ao carregar definições de ingredientes",
         color: "red",
       });
     } finally {
@@ -61,20 +53,12 @@ export default function InventoryPage() {
     fetchIngredients();
   }, []);
 
-  const handleOpenUpdateStock = (ingredient: SerializedIngredient) => {
-    setSelectedIngredient(ingredient);
-    setIsUpdateStockModalOpen(true);
-  };
-
-  const handleCloseUpdateStock = () => {
-    setSelectedIngredient(null);
-    setIsUpdateStockModalOpen(false);
-  };
+  // UpdateStockModal is removed, no handler needed
 
   return (
     <Container fluid>
       <Stack gap="lg">
-        <PageHeader title="Inventário (Ingredientes)" />
+        <PageHeader title="Ingredientes (Definições)" />
         <Group>
           <Button
             leftSection={<IconPlus size={14} />}
@@ -87,7 +71,8 @@ export default function InventoryPage() {
           data={ingredients}
           isLoading={isLoading}
           onRefresh={fetchIngredients}
-          onUpdateStock={handleOpenUpdateStock}
+          // Remove onUpdateStock prop
+          // onUpdateStock={handleOpenUpdateStock} // REMOVED
         />
       </Stack>
 
@@ -100,15 +85,7 @@ export default function InventoryPage() {
         }}
       />
 
-      <UpdateStockModal
-        opened={isUpdateStockModalOpen}
-        onClose={handleCloseUpdateStock}
-        onSuccess={() => {
-          handleCloseUpdateStock();
-          fetchIngredients();
-        }}
-        ingredient={selectedIngredient}
-      />
+      {/* UpdateStockModal component removed */}
     </Container>
   );
 }

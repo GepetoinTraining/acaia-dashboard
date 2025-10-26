@@ -1,5 +1,5 @@
 // This is the complete schema built from "first principles" based on the detailed vision.
-// This version FIXES all P1012 validation errors.
+// This version includes the StockHolding model for location-based inventory.
 
 datasource db {
   provider = "postgresql"
@@ -18,7 +18,7 @@ model User {
   id        String   @id @default(cuid())
   name      String
   email     String   @unique
-  pin       String   @unique
+  pin       String
   role      Role     @default(SERVER)
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
@@ -27,10 +27,9 @@ model User {
   orders            HandledOrder[]
   acknowledgedCalls ServerCall[]   @relation("AcknowledgedCalls")
   resolvedCalls     ServerCall[]   @relation("ResolvedCalls")
-  
-  // --- FIX ---
-  // Replaced the array with a proper relation to the new 'StaffAssignment' join table.
+
   assignedWorkstations StaffAssignment[]
+  prepTasksExecuted    PrepTask[] // Added opposite relation
 }
 
 enum Role {
@@ -67,7 +66,7 @@ model ClientWallet {
   id           String   @id @default(cuid())
   clientId     String   @unique
   client       Client   @relation(fields: [clientId], references: [id])
-  balance      Decimal  @default(0.00)
+  balance      Decimal  @default(0.00) @db.Decimal(10, 2) // Added precision
   updatedAt    DateTime @updatedAt
 
   transactions WalletTransaction[]
@@ -77,13 +76,13 @@ model WalletTransaction {
   id           String            @id @default(cuid())
   walletId     String
   wallet       ClientWallet      @relation(fields: [walletId], references: [id])
-  clientId     String?
+  clientId     String?           // Optional link directly to client for easier querying
   client       Client?           @relation(fields: [clientId], references: [id])
-  amount       Decimal
+  amount       Decimal           @db.Decimal(10, 2) // Added precision
   type         TransactionType
   status       TransactionStatus
   proofOfPay   String?
-  approvedBy   String?
+  approvedBy   String?           // User ID of staff who approved/added credit
   createdAt    DateTime          @default(now())
   updatedAt    DateTime          @updatedAt
 }
@@ -108,33 +107,37 @@ model FloorPlan {
   name      String
   width     Int      @default(100)
   height    Int      @default(100)
-  floorGrid Json?
+  floorGrid Json? // For future visual editor state
 
   objects VenueObject[]
 }
 
 model VenueObject {
-  id            String          @id @default(cuid())
-  name          String
-  floorPlanId   String
-  floorPlan     FloorPlan       @relation(fields: [floorPlanId], references: [id])
-  anchorX       Int
-  anchorY       Int
-  shape         Json
-  type          VenueObjectType @default(TABLE)
-  qrCodeId      String          @unique @default(cuid())
-  capacity      Int?
-  isReservable  Boolean         @default(false)
-  reservationCost Decimal?
+  id              String          @id @default(cuid())
+  name            String
+  floorPlanId     String
+  floorPlan       FloorPlan       @relation(fields: [floorPlanId], references: [id])
+  anchorX         Int
+  anchorY         Int
+  shape           Json
+  type            VenueObjectType @default(TABLE)
+  qrCodeId        String          @unique @default(cuid())
+  capacity        Int?
+  isReservable    Boolean         @default(false)
+  reservationCost Decimal?        @db.Decimal(10, 2)
   workstationId   String?
   workstation     Workstation?    @relation(fields: [workstationId], references: [id])
+  isMainStorage   Boolean         @default(false) // <-- ADDED FLAG
 
-  visits      Visit[]
-  serverCalls ServerCall[]
-  
-  // --- FIX ---
-  // Replaced the array with a proper relation to the new 'StaffAssignment' join table.
-  assignedStaff StaffAssignment[]
+  visits          Visit[]
+  serverCalls     ServerCall[]
+  assignedStaff   StaffAssignment[]
+  stockHoldings   StockHolding[]
+  prepTasksLocated PrepTask[]
+
+  @@index([floorPlanId])
+  @@index([workstationId])
+  @@index([isMainStorage]) // Index for finding main storage
 }
 
 enum VenueObjectType {
@@ -143,11 +146,13 @@ enum VenueObjectType {
   WORKSTATION
   ENTERTAINMENT
   IMPASSABLE
+  // New types for stock locations
+  STORAGE
+  FREEZER
+  SHELF
+  WORKSTATION_STORAGE // e.g., under-counter fridge at bar station
 }
 
-// --- FIX ---
-// This is the NEW explicit join table for the many-to-many relationship
-// between 'User' (Staff) and 'VenueObject' (Workstations).
 model StaffAssignment {
   userId        String
   user          User        @relation(fields: [userId], references: [id])
@@ -163,30 +168,32 @@ model Tab {
   rfid        String   @unique
   isActive    Boolean  @default(true)
   isInUse     Boolean  @default(false)
-  
-  // --- FIX ---
-  // Added the other side of the 1-to-1 relation, using the same name "activeVisit".
+
   activeVisit Visit?   @relation("activeVisit")
+
+  @@index([rfid])
 }
 
 model Visit {
   id            String       @id @default(cuid())
   clientId      String
   client        Client       @relation(fields: [clientId], references: [id])
-  
+
   tabId         String       @unique
-  // This side was correct
   tab           Tab          @relation(fields: [tabId], references: [id], name: "activeVisit")
-  
+
   venueObjectId String?
   venueObject   VenueObject? @relation(fields: [venueObjectId], references: [id])
-  
+
   checkInAt     DateTime     @default(now())
   checkOutAt    DateTime?
-  totalSpent    Decimal      @default(0.00)
+  totalSpent    Decimal      @default(0.00) @db.Decimal(10, 2) // Added precision
 
   orders      Order[]
   serverCalls ServerCall[]
+
+  @@index([clientId])
+  @@index([venueObjectId])
 }
 
 // -----------------------------------------------------------------
@@ -196,27 +203,27 @@ model Visit {
 model Workstation {
   id    String @id @default(cuid())
   name  String @unique // "BAR", "KITCHEN", "COFFEE", "EXPEDITOR"
-  
-  venueObjects VenueObject[]
-  orderItems   OrderItem[]
-  
-  // --- FIX ---
-  // Added the other side of the 1-to-Many relation with 'Product'.
-  products     Product[]
+
+  venueObjects VenueObject[] // VenueObjects that represent this workstation
+  orderItems   OrderItem[]   // OrderItems prepared at this station
+  products     Product[]     // Products prepared at this station
 }
 
 model Order {
   id        String      @id @default(cuid())
   visitId   String
   visit     Visit       @relation(fields: [visitId], references: [id])
-  clientId  String?
+  clientId  String?     // Denormalized for easier reporting
   client    Client?     @relation(fields: [clientId], references: [id])
-  total     Decimal
+  total     Decimal     @db.Decimal(10, 2) // Added precision
   status    OrderStatus @default(PENDING)
   createdAt DateTime    @default(now())
-  
+
   items     OrderItem[]
-  handledBy HandledOrder[]
+  handledBy HandledOrder[] // Staff who took/handled the order
+
+  @@index([visitId])
+  @@index([createdAt])
 }
 
 model OrderItem {
@@ -224,16 +231,20 @@ model OrderItem {
   orderId       String
   order         Order           @relation(fields: [orderId], references: [id])
   productId     String
-  product       Product         @relation(fields: [productId], references: [id])
+  product       Product         @relation(fields: [productId], references: [id], onUpdate: NoAction, onDelete: Restrict) // Prevent product deletion if used
   quantity      Int
-  unitPrice     Decimal
-  totalPrice    Decimal
+  unitPrice     Decimal         @db.Decimal(10, 2) // Price at time of order // Added precision
+  totalPrice    Decimal         @db.Decimal(10, 2) // quantity * unitPrice // Added precision
   status        OrderItemStatus @default(PENDING)
-  workstationId String
+  workstationId String          // Denormalized prep station for kitchen/bar screens
   workstation   Workstation     @relation(fields: [workstationId], references: [id])
   createdAt     DateTime        @default(now())
   preparedAt    DateTime?
   deliveredAt   DateTime?
+
+  @@index([orderId])
+  @@index([productId])
+  @@index([workstationId, status])
 }
 
 model HandledOrder {
@@ -262,33 +273,67 @@ enum OrderItemStatus {
 }
 
 // -----------------------------------------------------------------
-// 5. PRODUCTS, RECIPES & INVENTORY
+// 5. PRODUCTS, RECIPES & INVENTORY (MODIFIED)
 // -----------------------------------------------------------------
 
 model Ingredient {
   id          String   @id @default(cuid())
   name        String   @unique
   unit        String
-  stock       Decimal  @default(0)
-  costPerUnit Decimal
-  
-  recipeSteps RecipeIngredient[]
+  costPerUnit Decimal  @db.Decimal(10, 4)
+  isPrepared  Boolean  @default(false)
+
+  recipeSteps        RecipeIngredient[]
+  stockHoldings      StockHolding[]
+  prepRecipeOutputs  PrepRecipe[]        @relation("PrepRecipeOutput")
+  prepRecipeInputs   PrepRecipeInput[]
+  // Relation for simple products linked directly to this ingredient
+  linkedProducts     Product[]           @relation("SimpleProductIngredient") // <-- ADDED RELATION
+
+  @@index([name])
+  @@index([isPrepared])
 }
+
+model StockHolding {
+  id            String      @id @default(cuid())
+  ingredientId  String
+  ingredient    Ingredient  @relation(fields: [ingredientId], references: [id])
+  venueObjectId String      // Where is it stored? (FK to VenueObject)
+  location      VenueObject @relation(fields: [venueObjectId], references: [id])
+  quantity      Decimal     @db.Decimal(10, 3) // Quantity in Ingredient's base 'unit'
+  purchaseDate  DateTime?   // Optional: When was this batch created/purchased?
+  expiryDate    DateTime?   // Optional: When does this batch expire?
+  // Add cost for this specific batch, useful for FIFO/LIFO later
+  costAtAcquisition Decimal? @db.Decimal(10, 4) // Cost per unit when this batch was acquired/created
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([ingredientId])
+  @@index([venueObjectId])
+  @@index([expiryDate])
+}
+
 
 model Product {
   id            String      @id @default(cuid())
   name          String
   description   String?
-  price         Decimal
+  price         Decimal     @db.Decimal(10, 2)
   imageUrl      String?
   type          ProductType @default(DRINK)
-  
+
   prepStationId String
-  // This side was correct
   prepStation   Workstation @relation(fields: [prepStationId], references: [id])
+
+  // Link to a single Ingredient for simple products (e.g., a can of soda IS the ingredient)
+  ingredientId  String?             // <-- ADDED FIELD
+  ingredient    Ingredient?         @relation("SimpleProductIngredient", fields: [ingredientId], references: [id], onDelete: SetNull) // <-- ADDED RELATION
 
   orderItems    OrderItem[]
   recipe        Recipe?
+
+  @@index([prepStationId])
+  @@index([ingredientId]) // <-- ADDED INDEX
 }
 
 enum ProductType {
@@ -296,36 +341,94 @@ enum ProductType {
   DRINK
 }
 
+// Product Recipe
 model Recipe {
   id          String   @id @default(cuid())
   productId   String   @unique
   product     Product  @relation(fields: [productId], references: [id])
   notes       String?
-  difficulty  Int?     @default(1)
-  
+  difficulty  Int?     @default(1) // e.g., 1-5 scale
+
   ingredients RecipeIngredient[]
   steps       RecipeStep[]
 }
 
+// Link Product Recipe to Ingredients
 model RecipeIngredient {
   id           String     @id @default(cuid())
   recipeId     String
-  recipe       Recipe     @relation(fields: [recipeId], references: [id])
+  recipe       Recipe     @relation(fields: [recipeId], references: [id], onDelete: Cascade) // Cascade delete if Recipe is deleted
   ingredientId String
-  ingredient   Ingredient @relation(fields: [ingredientId], references: [id])
-  quantity     Decimal
+  ingredient   Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Restrict) // Prevent Ingredient deletion if used
+  quantity     Decimal    @db.Decimal(10, 3) // Quantity of ingredient 'unit' needed
+
+  @@index([recipeId])
+  @@index([ingredientId])
 }
 
+// Steps for Product Recipe
 model RecipeStep {
-  id          String   @id @default(cuid()) // <-- FIX: Was "cDuid()"
+  id          String   @id @default(cuid())
   recipeId    String
-  recipe      Recipe   @relation(fields: [recipeId], references: [id])
+  recipe      Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade) // Cascade delete if Recipe is deleted
   stepNumber  Int
   instruction String
-  motion      String?
-  prepTime    Int?
-  cookTime    Int?
-  waitTime    Int?
+  motion      String?  // Optional: Specific technique
+  prepTime    Int?     // Optional: Time in seconds for this step (prep)
+  cookTime    Int?     // Optional: Time in seconds for this step (active cooking)
+  waitTime    Int?     // Optional: Time in seconds for this step (passive waiting)
+
+  @@index([recipeId])
+}
+
+// --- NEW MODELS for PREPARATION ---
+
+// Defines the transformation from raw to prepared ingredients
+model PrepRecipe {
+  id                 String   @id @default(cuid())
+  name               String   @unique // e.g., "Chop Onions", "Make Hamburger Patties"
+  outputIngredientId String   // The prepared ingredient produced
+  outputIngredient   Ingredient @relation("PrepRecipeOutput", fields: [outputIngredientId], references: [id], onDelete: Restrict) // Prevent deletion of output ingredient if used here
+  outputQuantity     Decimal  @db.Decimal(10, 3) // How much output ingredient is produced (yield)
+  notes              String?
+  estimatedLaborTime Int?     // Optional: Estimated time in minutes/seconds for prep
+
+  inputs             PrepRecipeInput[] // Ingredients required for this prep
+  prepTasks          PrepTask[]        // Instances where this recipe was executed
+
+  @@index([outputIngredientId])
+}
+
+// Join table for PrepRecipe inputs (Many-to-Many with Ingredient)
+model PrepRecipeInput {
+  id           String     @id @default(cuid())
+  prepRecipeId String
+  prepRecipe   PrepRecipe @relation(fields: [prepRecipeId], references: [id], onDelete: Cascade) // Cascade delete if PrepRecipe deleted
+  ingredientId String
+  ingredient   Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Restrict) // Prevent Ingredient deletion if used
+  quantity     Decimal    @db.Decimal(10, 3) // Quantity of raw ingredient needed
+
+  @@index([prepRecipeId])
+  @@index([ingredientId])
+}
+
+// Records an instance of performing a preparation task
+model PrepTask {
+  id            String     @id @default(cuid())
+  prepRecipeId  String
+  prepRecipe    PrepRecipe @relation(fields: [prepRecipeId], references: [id])
+  quantityRun   Decimal    @db.Decimal(10, 3) // How many units of the *output* ingredient were made in this run
+  executedAt    DateTime   @default(now())
+  executedById  String     // User who performed the task
+  executedBy    User       @relation(fields: [executedById], references: [id]) // Relation name defaults based on field name
+  locationId    String     // VenueObject ID where the prep happened / output stored
+  location      VenueObject @relation(fields: [locationId], references: [id]) // Relation name defaults based on field name
+  notes         String?
+
+  @@index([prepRecipeId])
+  @@index([executedById])
+  @@index([locationId])
+  @@index([executedAt])
 }
 
 // -----------------------------------------------------------------
@@ -338,8 +441,7 @@ model Entertainer {
   type            EntertainerType
   bio             String?
   imageUrl        String?
-  rate            Decimal?
-  
+  rate            Decimal?         @db.Decimal(10, 2) // Payment rate // Added precision
   scheduledEvents ScheduledEvent[]
 }
 
@@ -354,8 +456,11 @@ model ScheduledEvent {
   entertainer   Entertainer @relation(fields: [entertainerId], references: [id])
   startTime     DateTime
   endTime       DateTime
-  
+
   liveSession   DJSession?
+
+  @@index([entertainerId])
+  @@index([startTime])
 }
 
 model DJSession {
@@ -364,8 +469,8 @@ model DJSession {
   event           ScheduledEvent @relation(fields: [eventId], references: [id])
   actualStartTime DateTime     @default(now())
   actualEndTime   DateTime?
-  status          String       @default("LIVE")
-  
+  status          String       @default("LIVE") // e.g., LIVE, FINISHED
+
   tracksPlayed    DJSetTrack[]
 }
 
@@ -376,6 +481,9 @@ model DJSetTrack {
   vinylRecordId String
   vinylRecord   VinylRecord @relation(fields: [vinylRecordId], references: [id])
   playedAt      DateTime    @default(now())
+
+  @@index([sessionId])
+  @@index([vinylRecordId])
 }
 
 // -----------------------------------------------------------------
@@ -387,7 +495,7 @@ model VinylLibrarySlot {
   row      Int
   column   Int
   capacity Int    @default(30)
-  
+
   records  VinylRecord[]
 
   @@unique([row, column])
@@ -403,10 +511,11 @@ model VinylRecord {
   slotId         String
   slot           VinylLibrarySlot @relation(fields: [slotId], references: [id])
   positionInSlot Int
-  
+
   setsPlayed     DJSetTrack[]
 
   @@unique([slotId, positionInSlot])
+  @@index([artist, title])
 }
 
 // -----------------------------------------------------------------
@@ -421,14 +530,17 @@ model ServerCall {
   venueObject   VenueObject  @relation(fields: [venueObjectId], references: [id])
   status        ServerCallStatus @default(PENDING)
   createdAt     DateTime     @default(now())
-  
+
   acknowledgedByUserId String?
   acknowledgedBy       User?   @relation("AcknowledgedCalls", fields: [acknowledgedByUserId], references: [id])
   acknowledgedAt       DateTime?
-
   resolvedByUserId String?
   resolvedBy       User?   @relation("ResolvedCalls", fields: [resolvedByUserId], references: [id])
   resolvedAt       DateTime?
+
+  @@index([visitId])
+  @@index([venueObjectId])
+  @@index([status, createdAt])
 }
 
 enum ServerCallStatus {

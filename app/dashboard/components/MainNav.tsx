@@ -1,35 +1,38 @@
 // File: app/dashboard/components/MainNav.tsx
 "use client";
 
-import { NavLink, Stack, Button, Text, Skeleton } from "@mantine/core"; // Added Skeleton
+import { NavLink, Stack, Button, Text, Skeleton } from "@mantine/core";
 import {
     LayoutDashboard, Users, Martini, Archive, Calculator,
-    UserPlus, Briefcase, LineChart, LogOut, Armchair, Music, Disc
+    UserPlus, Briefcase, LineChart, LogOut, Armchair, Music, Disc, Package, ToolsKitchen3 // Added ToolsKitchen3 icon
 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
-import React, { useState, useEffect } from "react"; // Added useState, useEffect
-import { ApiResponse, StaffSession } from "@/lib/types"; // Added StaffSession
+import React, { useState, useEffect } from "react";
+import { ApiResponse, StaffSession } from "@/lib/types";
 
-// Define the navigation links for Acaia
+// Updated navigation links for Acaia
 const links = [
     { icon: LayoutDashboard, label: "Visão Geral", href: "/dashboard/live" },
-    { icon: Calculator, label: "Nova Comanda", href: "/dashboard/pospage" },
+    { icon: Calculator, label: "Nova Comanda (PDV)", href: "/dashboard/pospage" },
     { icon: Users, label: "Clientes", href: "/dashboard/clients" },
-    { icon: Armchair, label: "Mesas/Áreas", href: "/dashboard/seating" },
-    { icon: Martini, label: "Produtos", href: "/dashboard/products" },
-    { icon: Archive, label: "Inventário", href: "/dashboard/bar" },
-    { icon: Music, label: "Artistas", href: "/dashboard/entertainers" }, // Added
-    { icon: Disc, label: "Vinil", href: "/dashboard/vinyl" },          // Added
+    { icon: Armchair, label: "Planta & Mesas", href: "/dashboard/floorplan" },
+    { icon: Martini, label: "Produtos & Receitas", href: "/dashboard/products" },
+    { icon: Package, label: "Ingredientes", href: "/dashboard/ingredients"},
+    { icon: ToolsKitchen3, label: "Receitas de Preparo", href: "/dashboard/prep-recipes"}, // <-- ADDED THIS LINE
+    { icon: Archive, label: "Estoque", href: "/dashboard/stock" },
+    { icon: Music, label: "Artistas & Eventos", href: "/dashboard/entertainers" },
+    { icon: Disc, label: "Vinil & DJ Sets", href: "/dashboard/vinyl" },
     { icon: UserPlus, label: "Equipe", href: "/dashboard/staff" },
-    { icon: Briefcase, label: "Parceiros", href: "/dashboard/partners" },
-    // { icon: BadgePercent, label: "Promoções", href: "/dashboard/promotions" }, // Removed
+    // { icon: Briefcase, label: "Parceiros", href: "/dashboard/partners" },
     { icon: LineChart, label: "Relatórios", href: "/dashboard/reports" },
 ];
+
+// ... (rest of the MainNav component remains the same) ...
 
 // Helper function to fetch session (client-side)
 async function getClientSession(): Promise<StaffSession | null> {
     try {
-        const res = await fetch('/api/session'); // We need to create this simple endpoint
+        const res = await fetch('/api/session');
         if (!res.ok) return null;
         const data: ApiResponse<StaffSession> = await res.json();
         return data.success && data.data ? data.data : null;
@@ -43,18 +46,13 @@ async function getClientSession(): Promise<StaffSession | null> {
 export function MainNav() {
     const pathname = usePathname();
     const router = useRouter();
-    const [userName, setUserName] = useState<string | null>(null); // State for user name
+    const [userName, setUserName] = useState<string | null>(null);
     const [loadingSession, setLoadingSession] = useState(true);
 
-    // Fetch session on component mount
     useEffect(() => {
         getClientSession().then(session => {
             if (session) {
                 setUserName(session.name);
-            } else {
-                // Handle case where session might not be available (e.g., redirect?)
-                // For now, just leave name null or set a default
-                console.warn("No active session found for MainNav.");
             }
             setLoadingSession(false);
         });
@@ -62,11 +60,9 @@ export function MainNav() {
 
 
     const handleLogout = async () => {
-        // Call the logout API
         await fetch("/api/auth", { method: "DELETE" });
-        // Redirect to login page
         router.push("/");
-        router.refresh(); // Ensure page reloads state
+        router.refresh();
     };
 
 
@@ -79,23 +75,26 @@ export function MainNav() {
                         href={link.href}
                         label={link.label}
                         leftSection={<link.icon size="1rem" />}
-                        active={pathname === link.href || (link.href !== '/dashboard/live' && pathname.startsWith(link.href))} // Adjusted active logic slightly
+                        active={pathname === link.href || (link.href !== '/dashboard/live' && pathname.startsWith(link.href + '/'))}
                         onClick={(e: React.MouseEvent<HTMLAnchorElement>) => {
                             e.preventDefault();
                             router.push(link.href);
                         }}
                         variant="subtle"
-                        color="gray"
                         styles={(theme) => ({
                             root: {
+                                borderRadius: theme.radius.sm,
                                 '&[data-active]': {
-                                    backgroundColor: theme.colors.pastelGreen[1],
-                                    color: theme.colors.pastelGreen[8],
+                                    backgroundColor: theme.colors.blue[0],
+                                    color: theme.colors.blue[9],
                                     fontWeight: 500,
                                 },
                                 '&[data-active] svg': {
-                                    color: theme.colors.pastelGreen[7],
+                                     color: theme.colors.blue[7],
                                 },
+                                '&:hover': {
+                                    backgroundColor: theme.colorScheme === 'dark' ? theme.colors.dark[6] : theme.colors.gray[1],
+                                }
                             }
                         })}
                     />
@@ -103,12 +102,11 @@ export function MainNav() {
             </Stack>
 
             <Stack gap="xs">
-                 {/* Display username or skeleton while loading */}
                  {loadingSession ? (
                     <Skeleton height={15} width="70%" radius="sm" />
                  ) : (
-                     <Text size="sm" c="dimmed" truncate> {/* Added truncate */}
-                         Logado como: {userName || 'Usuário'} {/* Fallback text */}
+                     <Text size="sm" c="dimmed" truncate>
+                         Logado como: {userName || 'Usuário'}
                      </Text>
                  )}
                 <Button
@@ -116,6 +114,7 @@ export function MainNav() {
                     variant="light"
                     color="red"
                     leftSection={<LogOut size="1rem" />}
+                    fullWidth
                 >
                     Sair
                 </Button>

@@ -1,36 +1,36 @@
 // File: lib/types.ts
 import {
-    Client, Partner, Product as PrismaProduct, Sale, Staff, StaffCommission, Visit , StaffShift,
-    SeatingArea, Entertainer, VinylRecord, Prisma, ClientStatus, InventoryItem,
-    StockMovementType, UnitOfMeasure, ProductType, PrepStation // Added ProductType, PrepStation
+    Client, Partner, Product as PrismaProduct, /* Sale, */ User, StaffCommission, Visit , /* StaffShift, */ // Removed Sale, StaffShift
+    SeatingArea, Entertainer, VinylRecord, Prisma, ClientStatus, /* InventoryItem, */ // Removed InventoryItem
+    /* StockMovementType, UnitOfMeasure, */ ProductType, Workstation, Ingredient, StockHolding as PrismaStockHolding, VenueObject, Order, // Added Order
+    // Add new Prisma types
+    PrepRecipe as PrismaPrepRecipe,
+    PrepRecipeInput as PrismaPrepRecipeInput,
+    PrepTask as PrismaPrepTask,
+    Role // Ensure Role is imported if used directly (e.g., in StaffSession)
 } from "@prisma/client";
 
-// --- Client-side Product type with number prices ---
-// Type representing Product after Decimal fields are converted to numbers
-export type Product = Omit<PrismaProduct, 'costPrice' | 'salePrice' | 'deductionAmountInSmallestUnit'> & {
-    costPrice: number;
-    salePrice: number;
-    deductionAmountInSmallestUnit: number;
-    // Relations might also need serialization if they contain Decimals
-    inventoryItem: (Omit<InventoryItem, 'storageUnitSizeInSmallest' | 'reorderThresholdInSmallest' | 'createdAt'> & { // Added createdAt omission
-        storageUnitSizeInSmallest: number | null;
-        reorderThresholdInSmallest: number | null;
-        smallestUnit: UnitOfMeasure; // Ensure correct enum
-    }) | null;
-    partner: Partner | null;
+// --- Client-side Product type with string prices ---
+// Type representing Product after Decimal fields are converted to strings FOR API RESPONSE
+export type Product = Omit<PrismaProduct, 'price'> & {
+    price: string; // Price is a string from the API
+    prepStation: Workstation; // Include prep station
 };
 
-// --- Cart Item for POS page (Uses Product with number prices) ---
-// --- FIX: Update CartItem to use the client-side Product type ---
+// --- Cart Item for POS page (Receives Product with string prices from API) ---
 export type CartItem = {
-  product: Product; // Use the Product type defined above
+  product: Product; // Uses the Product type with string price
   quantity: number;
 };
 
 
 // --- SESSION & AUTH TYPES ---
+// Updated to use User model fields
 export type StaffSession = {
-    id: number; name: string; role: string; isLoggedIn: boolean; shiftId?: number; pin?: string;
+    id: string; // User ID is string (cuid)
+    name: string;
+    role: Role; // Use Role enum
+    isLoggedIn: boolean;
 };
 
 // --- API RESPONSE ---
@@ -38,64 +38,113 @@ export type ApiResponse<T = unknown> = {
     success: boolean; data?: T; error?: string; message?: string;
 };
 
-// --- STAFF ---
-export type StaffWithShifts = Staff & { shifts: StaffShift[] };
+// --- STAFF (Now USER) ---
+// Type for User with simplified workstation info (if assigned)
+export type UserWithWorkstation = User & {
+    workstation: Workstation | null;
+}
 
 // --- CLIENTS ---
-// Updated Sale relation
+// Types using Order instead of Sale
 export type ClientDetails = Client & {
     visits: (Visit & {
-        seatingArea: SeatingArea | null;
-        sales: (Sale & {
-             product: PrismaProduct | null; // API might return PrismaProduct initially
-             staff: { name: string } | null;
+        seatingArea: SeatingArea | null; // SeatingArea might become VenueObject later
+        orders: (Order & { // Using Order
+             items: ({ product: PrismaProduct | null } & Record<string, unknown>)[];
+             handledBy: ({ user: { name: string } | null } & Record<string, unknown>)[];
         })[];
     })[];
+    wallet: ({ balance: Prisma.Decimal | null } & Record<string, unknown>) | null;
     _count: { visits: number };
 };
 export type ClientWithDetails = ClientDetails;
 
-// Updated Sale relation
-export type VisitWithSalesAndArea = Visit & {
-    seatingArea: SeatingArea | null;
-    sales: (Sale & {
-         product: PrismaProduct | null; // API might return PrismaProduct initially
-         staff: { name: string } | null;
+export type VisitWithOrdersAndArea = Visit & {
+    seatingArea: SeatingArea | null; // SeatingArea might become VenueObject later
+    orders: (Order & {
+         items: ({ product: PrismaProduct | null } & Record<string, unknown>)[];
+         handledBy: ({ user: { name: string } | null } & Record<string, unknown>)[];
     })[];
 };
 
 // --- INVENTORY ---
-export type AggregatedStock = {
-    inventoryItemId: number; name: string; smallestUnit: UnitOfMeasure;
-    totalStock: number; reorderThreshold: number | null;
+// Ingredient Definition (as returned by API)
+export type SerializedIngredientDef = Omit<Ingredient, "costPerUnit"> & {
+  costPerUnit: string;
+  isPrepared: boolean;
 };
+
+// Stock Holding (as returned by API)
+export type SerializedStockHolding = Omit<PrismaStockHolding, 'quantity' | 'costAtAcquisition'> & {
+    quantity: string;
+    costAtAcquisition: string | null;
+    ingredient: { name: string; unit: string };
+    location: { name: string };
+};
+
+// Aggregated Stock (as returned by API)
+export type AggregatedIngredientStock = {
+    ingredientId: string;
+    name: string;
+    unit: string;
+    costPerUnit: string; // Average cost
+    totalStock: string;
+    isPrepared: boolean;
+};
+
+// --- PREP RECIPES & TASKS ---
+// Prep Recipe Input (as returned by API)
+export type SerializedPrepRecipeInput = Omit<PrismaPrepRecipeInput, 'quantity'> & {
+    quantity: string;
+    ingredient: { id: string; name: string; unit: string };
+}
+
+// Prep Recipe Definition (as returned by API)
+export type SerializedPrepRecipe = Omit<PrismaPrepRecipe, 'outputQuantity' | 'inputs'> & {
+    outputQuantity: string;
+    outputIngredient: { id: string; name: string; unit: string };
+    inputs: SerializedPrepRecipeInput[];
+};
+
+// Prep Task Record (as returned by API)
+export type SerializedPrepTask = Omit<PrismaPrepTask, 'quantityRun'> & {
+    quantityRun: string;
+    prepRecipe: { name: string };
+    executedBy: { name: string };
+    location: { name: string };
+};
+
 
 // --- LIVE DATA ---
+// Update Live Client types to use string IDs
 export type LiveClient = {
-    visitId: number; clientId: number | null; name: string | null;
-    seatingAreaId?: number | null; seatingAreaName?: string | null;
+    visitId: string;
+    clientId: string | null;
+    name: string | null;
+    seatingAreaId?: string | null; // Now VenueObject ID
+    seatingAreaName?: string | null; // Name of the VenueObject
 };
 
+// SeatingArea might be deprecated in favor of VenueObject for live map
 export type SeatingAreaWithVisit = SeatingArea & {
-    visits: ({ id: number; clientId: number | null; client: { name: string | null } | null; })[];
+    visits: ({ id: string; clientId: string | null; client: { name: string | null } | null; })[];
 };
 export type SeatingAreaWithVisitInfo = SeatingAreaWithVisit;
 
 export type LiveData = {
     clients: LiveClient[];
-    products: Product[]; // API returns Product with number prices now
-    seatingAreas?: SeatingAreaWithVisit[];
+    products: Product[];
+    // seatingAreas?: SeatingAreaWithVisit[]; // Consider replacing with VenueObject data
 };
 
-// --- POS ---
-// AcaiaSalePayload defined inline in API route
-
 // --- FINANCIALS ---
-// Updated relatedSale type
+// Update StaffCommission to link to User and Order
 export type StaffCommissionWithDetails = StaffCommission & {
-    staff: { name: string };
-    relatedSale: (Sale & { product?: PrismaProduct | null }) | null; // API might return PrismaProduct
-    relatedClient: { name: string | null } | null;
+    staff: User; // Link to User
+    relatedOrder: (Order & { // Link to Order
+        items?: ({ product?: PrismaProduct | null } & Record<string, unknown>)[];
+    }) | null;
+    relatedClient: Client | null; // Link to Client
 };
 
 export type FinancialsData = {
@@ -103,17 +152,18 @@ export type FinancialsData = {
 };
 
 // --- REPORTS ---
+// Update leaderboards to use string IDs if necessary
 export type ReportStat = { title: string; value: string };
-export type SalesDataPoint = { date: string; Revenue: number };
+export type SalesDataPoint = { date: string; Revenue: number }; // Or string?
 
 export type ProductLeaderboardItem = {
-    productId: number | null; // Allow null from groupBy
+    productId: string | null; // Product ID is string
     name: string;
-    totalQuantitySold: number;
+    totalQuantitySold: number | string; // Prisma _sum might return BigInt -> string
 };
 
 export type ReportData = {
-    kpis: { totalRevenue: number; totalSales: number; avgSaleValue: number; newClients: number; };
-    salesOverTime: { date: string; Revenue: number }[];
+    kpis: { totalRevenue: string; totalSales: number; avgSaleValue: string; newClients: number; };
+    salesOverTime: { date: string; Revenue: string }[];
     productLeaderboard: ProductLeaderboardItem[];
 };

@@ -1,19 +1,31 @@
 // PATH: app/api/ingredients/route.ts
-// NOTE: This is a NEW FILE.
-
 import { prisma } from "@/lib/prisma";
 import { ApiResponse } from "@/lib/types";
 import { NextRequest, NextResponse } from "next/server";
-import { Ingredient } from "@prisma/client";
+import { Ingredient, Prisma } from "@prisma/client";
 import { Decimal } from "@prisma/client/runtime/library";
+import { getSession } from "@/lib/auth";
 
 /**
  * GET /api/ingredients
- * Fetches all ingredients
+ * Fetches all ingredient definitions (name, unit, costPerUnit, isPrepared).
  */
 export async function GET(req: NextRequest) {
+    // Optional: Add auth check if needed
+    // const session = await getSession();
+    // if (!session.user?.isLoggedIn) { ... }
+
   try {
     const ingredients = await prisma.ingredient.findMany({
+      select: {
+        id: true,
+        name: true,
+        unit: true,
+        costPerUnit: true,
+        isPrepared: true, // Include isPrepared flag
+        createdAt: true,
+        updatedAt: true,
+      },
       orderBy: {
         name: "asc",
       },
@@ -22,7 +34,6 @@ export async function GET(req: NextRequest) {
     // Serialize Decimal fields for JSON response
     const serializedIngredients = ingredients.map((item) => ({
       ...item,
-      stock: item.stock.toString(),
       costPerUnit: item.costPerUnit.toString(),
     }));
 
@@ -33,7 +44,7 @@ export async function GET(req: NextRequest) {
   } catch (error) {
     console.error("Error fetching ingredients:", error);
     return NextResponse.json<ApiResponse>(
-      { success: false, error: "Erro interno do servidor" },
+      { success: false, error: "Erro interno do servidor ao buscar ingredientes" },
       { status: 500 }
     );
   }
@@ -41,32 +52,42 @@ export async function GET(req: NextRequest) {
 
 /**
  * POST /api/ingredients
- * Creates a new ingredient
+ * Creates a new ingredient definition.
  */
 export async function POST(req: NextRequest) {
+    const session = await getSession();
+    if (!session.user?.isLoggedIn) { // Add appropriate role check later
+         return NextResponse.json<ApiResponse>({ success: false, error: "Não autorizado" }, { status: 401 });
+    }
+
   try {
     const body = await req.json();
-    const { name, unit, costPerUnit, stock } = body;
+    const { name, unit, costPerUnit, isPrepared } = body; // Added isPrepared
 
-    if (!name || !unit || !costPerUnit) {
+    if (!name || !unit || costPerUnit === undefined || isPrepared === undefined) {
       return NextResponse.json<ApiResponse>(
         {
           success: false,
-          error: "Nome, Unidade e Custo por Unidade são obrigatórios",
+          error: "Nome, Unidade, Custo por Unidade e 'É Preparado?' são obrigatórios",
         },
         { status: 400 }
       );
     }
 
     let costDecimal: Decimal;
-    let stockDecimal: Decimal;
-
     try {
+      // Allow cost 0 if it's a prepared item
       costDecimal = new Decimal(costPerUnit);
-      stockDecimal = new Decimal(stock || 0);
-    } catch (e) {
+      if (!isPrepared && costDecimal.isNegative()) {
+           throw new Error("Custo não pode ser negativo para itens comprados.");
+      }
+      // If prepared, force cost to 0 initially, it will be calculated by PrepTasks
+      if (isPrepared) {
+          costDecimal = new Decimal(0);
+      }
+    } catch (e: any) {
       return NextResponse.json<ApiResponse>(
-        { success: false, error: "Formato de número inválido" },
+        { success: false, error: `Formato de custo inválido: ${e.message}` },
         { status: 400 }
       );
     }
@@ -76,14 +97,13 @@ export async function POST(req: NextRequest) {
         name,
         unit,
         costPerUnit: costDecimal,
-        stock: stockDecimal,
+        isPrepared: !!isPrepared, // Ensure boolean
       },
     });
 
     // Serialize Decimal fields for response
     const serializedIngredient = {
       ...newIngredient,
-      stock: newIngredient.stock.toString(),
       costPerUnit: newIngredient.costPerUnit.toString(),
     };
 
@@ -93,84 +113,78 @@ export async function POST(req: NextRequest) {
     );
   } catch (error: any) {
     console.error("Error creating ingredient:", error);
-    if (error.code === "P2002" && error.meta?.target.includes("name")) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002" && error.meta?.target === "Ingredient_name_key") {
       return NextResponse.json<ApiResponse>(
-        { success: false, error: "Este ingrediente já existe" },
+        { success: false, error: "Já existe um ingrediente com este nome." },
         { status: 409 }
       );
     }
     return NextResponse.json<ApiResponse>(
-      { success: false, error: "Erro interno do servidor" },
+      { success: false, error: "Erro interno do servidor ao criar ingrediente" },
       { status: 500 }
     );
   }
 }
 
+
 /**
- * PATCH /api/ingredients
- * Updates the stock of an ingredient (adds or removes)
+ * DELETE /api/ingredients
+ * Deletes an ingredient definition.
+ * **Caution**: This should check if StockHoldings or Recipes exist first.
  */
-export async function PATCH(req: NextRequest) {
-  try {
-    const body = await req.json();
-    const { id, amount } = body; // amount can be positive or negative
-
-    if (!id || amount === undefined) {
-      return NextResponse.json<ApiResponse>(
-        { success: false, error: "ID e Quantidade são obrigatórios" },
-        { status: 400 }
-      );
+export async function DELETE(req: NextRequest) {
+    const session = await getSession();
+    if (!session.user?.isLoggedIn) { // Add appropriate role check later
+         return NextResponse.json<ApiResponse>({ success: false, error: "Não autorizado" }, { status: 401 });
     }
 
-    let amountDecimal: Decimal;
     try {
-      amountDecimal = new Decimal(amount);
-    } catch (e) {
-      return NextResponse.json<ApiResponse>(
-        { success: false, error: "Formato de quantidade inválido" },
-        { status: 400 }
-      );
+        const { id } = await req.json();
+
+        if (!id) {
+            return NextResponse.json<ApiResponse>({ success: false, error: "ID do ingrediente é obrigatório" }, { status: 400 });
+        }
+
+        // **Important Checks:** Prevent deletion if used
+        const stockCount = await prisma.stockHolding.count({ where: { ingredientId: id } });
+        const recipeCount = await prisma.recipeIngredient.count({ where: { ingredientId: id } });
+        const prepInputCount = await prisma.prepRecipeInput.count({ where: { ingredientId: id }});
+        // Check if it's an output for any prep recipe
+        const prepOutputCount = await prisma.prepRecipe.count({ where: { outputIngredientId: id }});
+
+
+        if (stockCount > 0) {
+            return NextResponse.json<ApiResponse>({ success: false, error: "Não é possível excluir. Existem lotes de estoque associados." }, { status: 409 });
+        }
+         if (recipeCount > 0) {
+            return NextResponse.json<ApiResponse>({ success: false, error: "Não é possível excluir. Ingrediente é usado em receitas de produtos." }, { status: 409 });
+        }
+         if (prepInputCount > 0) {
+            return NextResponse.json<ApiResponse>({ success: false, error: "Não é possível excluir. Ingrediente é usado como entrada em receitas de preparo." }, { status: 409 });
+        }
+         if (prepOutputCount > 0) {
+            return NextResponse.json<ApiResponse>({ success: false, error: "Não é possível excluir. Ingrediente é o resultado de uma receita de preparo." }, { status: 409 });
+        }
+
+
+        const deletedIngredient = await prisma.ingredient.delete({
+            where: { id: id },
+        });
+
+        return NextResponse.json<ApiResponse<{ id: string }>>(
+            { success: true, data: { id: deletedIngredient.id } },
+            { status: 200 }
+        );
+
+    } catch (error: any) {
+        console.error("Error deleting ingredient:", error);
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+            return NextResponse.json<ApiResponse>({ success: false, error: "Ingrediente não encontrado." }, { status: 404 });
+        }
+        // P2003 Foreign key constraint should be caught by the checks above
+        return NextResponse.json<ApiResponse>(
+            { success: false, error: "Erro interno do servidor ao excluir ingrediente." },
+            { status: 500 }
+        );
     }
-
-    if (amountDecimal.isZero()) {
-      return NextResponse.json<ApiResponse>(
-        { success: false, error: "Quantidade não pode ser zero" },
-        { status: 400 }
-      );
-    }
-
-    // Use Prisma's atomic increment operation
-    const updatedIngredient = await prisma.ingredient.update({
-      where: { id: id },
-      data: {
-        stock: {
-          increment: amountDecimal,
-        },
-      },
-    });
-
-    // Serialize Decimal fields for response
-    const serializedIngredient = {
-      ...updatedIngredient,
-      stock: updatedIngredient.stock.toString(),
-      costPerUnit: updatedIngredient.costPerUnit.toString(),
-    };
-
-    return NextResponse.json<ApiResponse<any>>(
-      { success: true, data: serializedIngredient },
-      { status: 200 }
-    );
-  } catch (error: any) {
-    console.error("Error updating stock:", error);
-    if (error.code === "P2025") {
-      return NextResponse.json<ApiResponse>(
-        { success: false, error: "Ingrediente não encontrado" },
-        { status: 404 }
-      );
-    }
-    return NextResponse.json<ApiResponse>(
-      { success: false, error: "Erro interno do servidor" },
-      { status: 500 }
-    );
-  }
 }

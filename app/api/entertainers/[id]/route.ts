@@ -56,7 +56,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
             if (!Object.values(EntertainerType).includes(type as EntertainerType)) {
                 inputError = "Tipo de artista inválido.";
             } else {
-                updateData.type = type; // Assign the validated enum value directly
+                updateData.type = type as EntertainerType; // Assign the validated enum value directly
             }
         }
         if (contactNotes !== undefined) {

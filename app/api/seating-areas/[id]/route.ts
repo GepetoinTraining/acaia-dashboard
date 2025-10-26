@@ -57,7 +57,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
         }
         if (type !== undefined) {
              if (!Object.values(SeatingAreaType).includes(type as SeatingAreaType)) inputError = "Tipo de área inválido.";
-             else updateData.type = type;
+             else updateData.type = type as SeatingAreaType;
         }
         if (reservationCost !== undefined) {
              const numCost = reservationCost === null || reservationCost === '' ? 0 : parseFloat(String(reservationCost));

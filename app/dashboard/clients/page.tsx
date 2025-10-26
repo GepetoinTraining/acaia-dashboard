@@ -1,34 +1,51 @@
+// PATH: app/dashboard/clients/page.tsx
 "use client";
 
-import { Button, Stack } from "@mantine/core";
-import { PageHeader } from "../components/PageHeader";
-import { Plus, User } from "lucide-react";
-import { useDisclosure } from "@mantine/hooks";
 import { useState, useEffect } from "react";
-import { ApiResponse } from "@/lib/types";
+import { Button, Container, Stack } from "@mantine/core";
+import { IconPlus } from "@tabler/icons-react";
 import { Client } from "@prisma/client";
-import { CreateClientModal } from "./components/CreateClientModal";
+import { PageHeader } from "../components/PageHeader";
 import { ClientTable } from "./components/ClientTable";
+import { CreateClientModal } from "./components/CreateClientModal"; // This component is fine as-is
+import { ApiResponse } from "@/lib/types";
+import { notifications } from "@mantine/notifications";
 
-function ClientsClientPage() {
-  const [clients, setClients] = useState<Client[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [opened, { open, close }] = useDisclosure(false);
+// Define the type for the API response
+export type ClientWithWallet = Client & {
+  wallet: {
+    balance: string; // Balance is a string
+  } | null;
+};
+
+export default function ClientsPage() {
+  const [clients, setClients] = useState<ClientWithWallet[]>([]);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   const fetchClients = async () => {
-    setLoading(true);
+    setIsLoading(true);
     try {
       const response = await fetch("/api/clients");
-      if (!response.ok) throw new Error("Failed to fetch clients");
-      const result: ApiResponse<Client[]> = await response.json();
-      if (result.success && result.data) {
-        setClients(result.data);
+      const data: ApiResponse<ClientWithWallet[]> = await response.json();
+      if (data.success && data.data) {
+        setClients(data.data);
+      } else {
+        notifications.show({
+          title: "Erro",
+          message: data.error || "Falha ao carregar clientes",
+          color: "red",
+        });
       }
     } catch (error) {
-      console.error(error);
-      // TODO: Show notification
+      console.error("Fetch clients error:", error);
+      notifications.show({
+        title: "Erro",
+        message: "Falha ao carregar clientes",
+        color: "red",
+      });
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
@@ -37,35 +54,30 @@ function ClientsClientPage() {
   }, []);
 
   return (
-    <>
+    <Container fluid>
+      <Stack gap="lg">
+        <PageHeader title="Clientes" />
+        <Button
+          leftSection={<IconPlus size={14} />}
+          onClick={() => setIsModalOpen(true)}
+          w={200}
+        >
+          Novo Cliente
+        </Button>
+        <ClientTable
+          data={clients}
+          isLoading={isLoading}
+          onRefresh={fetchClients}
+        />
+      </Stack>
       <CreateClientModal
-        opened={opened}
-        onClose={close}
+        opened={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
         onSuccess={() => {
-          close();
-          fetchClients(); // Refresh the table
+          setIsModalOpen(false);
+          fetchClients();
         }}
       />
-      <Stack>
-        <PageHeader
-          title="Clientes"
-          actionButton={
-            <Button
-              leftSection={<Plus size={16} />}
-              onClick={open}
-              color="privacyGold"
-            >
-              Adicionar Cliente
-            </Button>
-          }
-        />
-        <ClientTable clients={clients} loading={loading} />
-      </Stack>
-    </>
+    </Container>
   );
 }
-
-export default function ClientsPage() {
-  return <ClientsClientPage />;
-}
-

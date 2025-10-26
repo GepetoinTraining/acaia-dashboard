@@ -1,11 +1,27 @@
 // PATH: app/dashboard/products/components/ProductTable.tsx
+// NOTE: We are modifying this existing file to add the new button.
+
 "use client";
 
-import { Table, Badge, ActionIcon, Tooltip, Text, Loader } from "@mantine/core";
-import { IconPencil, IconTrash } from "@tabler/icons-react";
-import { ProductType } from "@prisma/client"; // Import enum
-import { ProductWithWorkstation } from "../page"; // Import the extended type
-import { formatCurrency } from "@/lib/utils"; // Assuming you have this util
+import {
+  Table,
+  Badge,
+  ActionIcon,
+  Tooltip,
+  Text,
+  Loader,
+  Button, // Import Button
+} from "@mantine/core";
+import {
+  IconPencil,
+  IconTrash,
+  IconToolsKitchen2, // Import Recipe icon
+} from "@tabler/icons-react";
+import { ProductType } from "@prisma/client";
+import { ProductWithWorkstation } from "../page";
+import { formatCurrency } from "@/lib/utils";
+import { useState } from "react"; // Import useState
+import { ManageRecipeModal } from "./ManageRecipeModal"; // Import the new modal
 
 interface ProductTableProps {
   data: ProductWithWorkstation[];
@@ -31,13 +47,23 @@ export function ProductTable({
   isLoading,
   onRefresh,
 }: ProductTableProps) {
+  const [selectedProduct, setSelectedProduct] =
+    useState<ProductWithWorkstation | null>(null);
+
+  const handleOpenRecipeModal = (product: ProductWithWorkstation) => {
+    setSelectedProduct(product);
+  };
+
+  const handleCloseRecipeModal = () => {
+    setSelectedProduct(null);
+  };
+
   const rows = data.map((product) => {
     return (
       <Table.Tr key={product.id}>
         <Table.Td>{product.name}</Table.Td>
         <Table.Td>{product.description || "N/A"}</Table.Td>
         <Table.Td>
-          {/* Note: product.price is now a string from the API */}
           {formatCurrency(parseFloat(product.price as any))}
         </Table.Td>
         <Table.Td>
@@ -46,7 +72,6 @@ export function ProductTable({
           </Badge>
         </Table.Td>
         <Table.Td>
-          {/* Display the name of the prep station */}
           {product.prepStation ? (
             <Badge color="gray">{product.prepStation.name}</Badge>
           ) : (
@@ -54,6 +79,17 @@ export function ProductTable({
           )}
         </Table.Td>
         <Table.Td>
+          {/* ADDED THIS TOOLTIP AND BUTTON */}
+          <Tooltip label="Gerenciar Receita">
+            <ActionIcon
+              variant="transparent"
+              color="cyan"
+              onClick={() => handleOpenRecipeModal(product)}
+            >
+              <IconToolsKitchen2 size={18} />
+            </ActionIcon>
+          </Tooltip>
+          {/* END OF ADDITION */}
           <Tooltip label="Editar">
             <ActionIcon variant="transparent" color="blue">
               <IconPencil size={18} />
@@ -74,30 +110,39 @@ export function ProductTable({
   }
 
   return (
-    <Table.ScrollContainer minWidth={700}>
-      <Table verticalSpacing="sm" striped highlightOnHover>
-        <Table.Thead>
-          <Table.Tr>
-            <Table.Th>Nome</Table.Th>
-            <Table.Th>Descrição</Table.Th>
-            <Table.Th>Preço</Table.Th>
-            <Table.Th>Tipo</Table.Th>
-            <Table.Th>Estação de Preparo</Table.Th>
-            <Table.Th>Ações</Table.Th>
-          </Table.Tr>
-        </Table.Thead>
-        <Table.Tbody>
-          {rows.length > 0 ? (
-            rows
-          ) : (
+    <>
+      <Table.ScrollContainer minWidth={700}>
+        <Table verticalSpacing="sm" striped highlightOnHover>
+          <Table.Thead>
             <Table.Tr>
-              <Table.Td colSpan={6}>
-                <Text ta="center">Nenhum produto encontrado</Text>
-              </Table.Td>
+              <Table.Th>Nome</Table.Th>
+              <Table.Th>Descrição</Table.Th>
+              <Table.Th>Preço</Table.Th>
+              <Table.Th>Tipo</Table.Th>
+              <Table.Th>Estação de Preparo</Table.Th>
+              <Table.Th>Ações</Table.Th>
             </Table.Tr>
-          )}
-        </Table.Tbody>
-      </Table>
-    </Table.ScrollContainer>
+          </Table.Thead>
+          <Table.Tbody>
+            {rows.length > 0 ? (
+              rows
+            ) : (
+              <Table.Tr>
+                <Table.Td colSpan={6}>
+                  <Text ta="center">Nenhum produto encontrado</Text>
+                </Table.Td>
+              </Table.Tr>
+            )}
+          </Table.Tbody>
+        </Table>
+      </Table.ScrollContainer>
+
+      {/* ADDED THIS MODAL */}
+      <ManageRecipeModal
+        opened={!!selectedProduct}
+        onClose={handleCloseRecipeModal}
+        product={selectedProduct}
+      />
+    </>
   );
 }

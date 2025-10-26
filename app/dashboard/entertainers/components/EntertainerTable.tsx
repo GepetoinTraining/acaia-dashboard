@@ -23,7 +23,8 @@ interface EntertainerTableProps {
   // TODO: Add onEdit and onDelete handlers
 }
 
-const formatEntertainerType = (type: EntertainerType)_ => {
+// CORRECTED: Removed the stray underscore
+const formatEntertainerType = (type: EntertainerType) => {
   switch (type) {
     case EntertainerType.BAND:
       return "Banda";

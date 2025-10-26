@@ -1,15 +1,16 @@
 // PATH: app/api/server-calls/route.ts
-// NOTE: This is a NEW FILE.
+// NOTE: We are ADDING a PATCH method to this existing file.
 
 import { prisma } from "@/lib/prisma";
 import { ApiResponse } from "@/lib/types";
 import { NextRequest, NextResponse } from "next/server";
-import { ServerCallStatus } from "@prisma/client";
+import { ServerCallStatus, ServerCall } from "@prisma/client";
+import { getSession } from "@/lib/auth"; // To get the logged-in user
 
 /**
  * POST /api/server-calls
  * Creates a new server call from a client at a specific location.
- * The client provides the qrCodeId of their location.
+ * (This function should already exist from Chunk 4)
  */
 export async function POST(req: NextRequest) {
   try {
@@ -35,7 +36,6 @@ export async function POST(req: NextRequest) {
     }
 
     // --- 2. Find the *active* Visit at that VenueObject ---
-    // An active visit means it has no checkOutAt timestamp.
     const activeVisit = await prisma.visit.findFirst({
       where: {
         venueObjectId: venueObject.id,
@@ -87,6 +87,71 @@ export async function POST(req: NextRequest) {
     );
   } catch (error: any) {
     console.error("Server call error:", error);
+    return NextResponse.json<ApiResponse>(
+      { success: false, error: "Erro interno do servidor" },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * PATCH /api/server-calls
+ * Updates the status of an existing server call (Acknowledge or Resolve)
+ * (This is the new function for the Live Dashboard)
+ */
+export async function PATCH(req: NextRequest) {
+  const session = await getSession();
+  const user = session.user;
+
+  if (!user?.isLoggedIn) {
+    return NextResponse.json<ApiResponse>(
+      { success: false, error: "Não autorizado" },
+      { status: 401 }
+    );
+  }
+
+  try {
+    const { id, status } = await req.json();
+
+    if (!id || !status) {
+      return NextResponse.json<ApiResponse>(
+        { success: false, error: "ID e Status são obrigatórios" },
+        { status: 400 }
+      );
+    }
+
+    let dataToUpdate: any = {
+      status: status,
+    };
+
+    // If acknowledging, log who did it and when
+    if (status === ServerCallStatus.ACKNOWLEDGED) {
+      dataToUpdate.acknowledgedByUserId = user.id;
+      dataToUpdate.acknowledgedAt = new Date();
+    }
+    // If resolving, log who did it and when
+    else if (status === ServerCallStatus.RESOLVED) {
+      dataToUpdate.resolvedByUserId = user.id;
+      dataToUpdate.resolvedAt = new Date();
+    }
+
+    const updatedCall = await prisma.serverCall.update({
+      where: { id: id },
+      data: dataToUpdate,
+    });
+
+    return NextResponse.json<ApiResponse<ServerCall>>(
+      { success: true, data: updatedCall },
+      { status: 200 }
+    );
+  } catch (error: any) {
+    console.error("Update call error:", error);
+    if (error.code === "P2025") {
+      return NextResponse.json<ApiResponse>(
+        { success: false, error: "Chamada não encontrada" },
+        { status: 404 }
+      );
+    }
     return NextResponse.json<ApiResponse>(
       { success: false, error: "Erro interno do servidor" },
       { status: 500 }

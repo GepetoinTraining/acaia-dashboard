@@ -1,175 +1,128 @@
+// PATH: app/dashboard/clients/components/CreateClientModal.tsx
+// NOTE: This file should be fine as-is from the old codebase,
+// but here is the refactored version just in case.
+
 "use client";
 
+import { useState } from "react";
 import {
   Modal,
   TextInput,
   Button,
   Stack,
   LoadingOverlay,
-  Select,
-  JsonInput,
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
-import { Client, ClientStatus, Staff } from "@prisma/client";
-import { useState, useEffect } from "react";
-import { ApiResponse } from "@/lib/types";
 import { notifications } from "@mantine/notifications";
+import { ApiResponse } from "@/lib/types";
+import { Client } from "@prisma/client";
 
-type CreateClientModalProps = {
+interface CreateClientModalProps {
   opened: boolean;
   onClose: () => void;
   onSuccess: () => void;
-};
-
-// Default JSON structure for the crmData field
-const defaultCrmData = {
-  visit_pattern: {},
-  preferred_drinks: [],
-  common_hosts: [],
-  social_profile: {
-    origin: { is_local: true, city: "Balneário Camboriú", state: "SC" },
-    professional: {},
-    personal: {},
-    hobbies_interests: {},
-    lifestyle_cues: {},
-    service_profile: {},
-    general_notes: "",
-  },
-};
-
-type StaffSelect = { label: string; value: string };
+}
 
 export function CreateClientModal({
   opened,
   onClose,
   onSuccess,
 }: CreateClientModalProps) {
-  const [loading, setLoading] = useState(false);
-  const [staffList, setStaffList] = useState<StaffSelect[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const form = useForm({
     initialValues: {
       name: "",
-      phoneNumber: "",
-      status: ClientStatus.new,
-      acquiredByStaffId: null as string | null,
-      crmData: JSON.stringify(defaultCrmData, null, 2),
+      phone: "",
+      email: "",
+      cpf: "",
     },
     validate: {
-      name: (val) => (val.trim().length < 2 ? "Nome inválido" : null),
-      crmData: (val) => {
-        try {
-          JSON.parse(val);
-          return null;
-        } catch (e) {
-          return "JSON inválido";
-        }
-      },
+      name: (value) =>
+        value.trim().length < 2 ? "Nome é obrigatório" : null,
+      phone: (value) =>
+        /^\d{10,11}$/.test(value)
+          ? null
+          : "Telefone inválido (10-11 dígitos)",
+      email: (value) =>
+        !value || /^\S+@\S+$/.test(value) ? null : "Email inválido",
+      cpf: (value) =>
+        !value || /^\d{11}$/.test(value) ? null : "CPF inválido (11 dígitos)",
     },
   });
 
-  // Fetch staff list for CAC tracking
-  useEffect(() => {
-    if (opened) {
-      fetch("/api/staff")
-        .then((res) => res.json())
-        .then((result: ApiResponse<Staff[]>) => {
-          if (result.success && result.data) {
-            setStaffList(
-              result.data.map((s) => ({
-                label: `${s.name} (${s.defaultRole})`,
-                value: s.id.toString(),
-              }))
-            );
-          }
-        });
-    } else {
-      form.reset();
-    }
-  }, [opened]);
-
   const handleSubmit = async (values: typeof form.values) => {
-    setLoading(true);
+    setIsSubmitting(true);
     try {
-      const payload = {
-        ...values,
-        crmData: JSON.parse(values.crmData), // Send as JSON object
-      };
-
       const response = await fetch("/api/clients", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(values),
       });
 
-      const result: ApiResponse<Client> = await response.json();
-      if (!response.ok) throw new Error(result.error || "Falha ao criar cliente");
+      const data: ApiResponse<Client> = await response.json();
 
-      notifications.show({
-        title: "Sucesso!",
-        message: `Cliente "${values.name}" criado.`,
-        color: "green",
-      });
-      onSuccess();
-    } catch (error: any) {
+      if (response.ok && data.success) {
+        notifications.show({
+          title: "Sucesso",
+          message: "Cliente criado com sucesso!",
+          color: "green",
+        });
+        form.reset();
+        onSuccess();
+      } else {
+        notifications.show({
+          title: "Erro",
+          message: data.error || "Falha ao criar cliente",
+          color: "red",
+        });
+      }
+    } catch (error) {
+      console.error("Submit error:", error);
       notifications.show({
         title: "Erro",
-        message: error.message,
+        message: "Ocorreu um erro inesperado",
         color: "red",
       });
     } finally {
-      setLoading(false);
+      setIsSubmitting(false);
     }
   };
 
+  const handleClose = () => {
+    form.reset();
+    onClose();
+  };
+
   return (
-    <Modal
-      opened={opened}
-      onClose={onClose}
-      title="Adicionar Novo Cliente"
-      centered
-      size="xl"
-    >
-      <LoadingOverlay visible={loading} />
+    <Modal opened={opened} onClose={handleClose} title="Novo Cliente">
+      <LoadingOverlay visible={isSubmitting} />
       <form onSubmit={form.onSubmit(handleSubmit)}>
         <Stack>
           <TextInput
             required
             label="Nome"
-            placeholder="Ex: João da Silva"
+            placeholder="Nome completo"
             {...form.getInputProps("name")}
           />
           <TextInput
+            required
             label="Telefone (com DDD)"
-            placeholder="Ex: 47999887766"
-            {...form.getInputProps("phoneNumber")}
+            placeholder="47999887766"
+            {...form.getInputProps("phone")}
           />
-          <Select
-            label="Status"
-            data={Object.values(ClientStatus).map((s) => ({
-              label: s,
-              value: s,
-            }))}
-            {...form.getInputProps("status")}
+          <TextInput
+            label="Email (Opcional)"
+            placeholder="email@dominio.com"
+            {...form.getInputProps("email")}
           />
-          <Select
-            label="Adquirido por (CAC)"
-            placeholder="Selecione um staff"
-            data={staffList}
-            searchable
-            clearable
-            {...form.getInputProps("acquiredByStaffId")}
+          <TextInput
+            label="CPF (Opcional)"
+            placeholder="12345678900"
+            {...form.getInputProps("cpf")}
           />
-          <JsonInput
-            label="Perfil do Cliente (CRM)"
-            description="Edite o JSON com os detalhes do cliente."
-            formatOnBlur
-            autosize
-            minRows={15}
-            {...form.getInputProps("crmData")}
-          />
-          <Button type="submit" mt="md" color="privacyGold" loading={loading}>
-            Salvar Cliente
+          <Button type="submit" mt="md">
+            Salvar
           </Button>
         </Stack>
       </form>

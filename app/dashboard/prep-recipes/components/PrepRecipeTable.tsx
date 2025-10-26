@@ -1,4 +1,4 @@
-// PATH: app/dashboard/prep-recipes/components/PrepRecipeTable.tsx
+
 "use client";
 
 import {

@@ -4,11 +4,37 @@ import { Modal, TextInput, Select, NumberInput, Button, Group, Stack } from "@ma
 import { DateInput } from "@mantine/dates";
 import { useForm } from "@mantine/form";
 import { Product } from "@/lib/types"; // Use client-side Product
-import { DiscountType, Promotion } from "@prisma/client"; // This import will fail until you run 'npx prisma generate'
+// --- START FIX ---
+// Comment out imports for non-existent types
+// import { DiscountType, Promotion } from "@prisma/client";
+// --- END FIX ---
 import { ApiResponse } from "@/lib/types";
 import { notifications } from "@mantine/notifications";
 import { useState } from "react";
 import { PromotionWithProduct } from "../page";
+
+// --- START FIX ---
+// Define a placeholder DiscountType enum if needed temporarily for UI elements
+// This allows the code to compile but the feature won't fully work without schema changes.
+enum DiscountType {
+    PERCENTAGE = "PERCENTAGE",
+    FIXED = "FIXED",
+}
+// Define a placeholder Promotion type if needed
+type Promotion = {
+    id: number | string; // Use appropriate ID type
+    createdAt: Date;
+    // Add other fields based on expected structure if necessary
+    productId: number; // Assuming number based on payload, adjust if needed
+    discountValue: number;
+    startDate: Date;
+    endDate: Date | null;
+    isActive: boolean;
+    discountType: DiscountType; // Use the placeholder enum
+    name: string; // Add name based on form values
+};
+// --- END FIX ---
+
 
 type CreatePromotionModalProps = {
     opened: boolean;
@@ -17,14 +43,13 @@ type CreatePromotionModalProps = {
     onPromotionCreated: (promotion: PromotionWithProduct) => void;
 };
 
-// --- FIX: Add 'export' to the function ---
 export function CreatePromotionModal({ opened, onClose, products, onPromotionCreated }: CreatePromotionModalProps) {
     const [loading, setLoading] = useState(false);
     const form = useForm({
         initialValues: {
             name: "",
             productId: null as string | null,
-            discountType: DiscountType.PERCENTAGE,
+            discountType: DiscountType.PERCENTAGE, // Use placeholder enum
             discountValue: 0,
             startDate: new Date(),
             endDate: null as Date | null,
@@ -33,6 +58,7 @@ export function CreatePromotionModal({ opened, onClose, products, onPromotionCre
     });
 
     const productOptions = products.map(p => ({
+        // Ensure product ID is treated as string for Select value
         value: p.id.toString(),
         label: p.name,
     }));
@@ -46,16 +72,25 @@ export function CreatePromotionModal({ opened, onClose, products, onPromotionCre
         }
 
         try {
-            // This type 'Promotion' will cause an error until prisma generate is run
+            // --- START FIX ---
+            // Construct payload using placeholder Promotion type
+            // Note: The API route is commented out, so this fetch will likely fail.
             const payload: Omit<Promotion, 'id' | 'createdAt'> = {
                 ...values,
-                productId: Number(values.productId),
+                // Ensure productId is handled correctly (e.g., number if API expects number)
+                // Adjust this based on how the API (when implemented) expects the ID
+                productId: Number(values.productId), // Example: Convert string ID to number
                 discountValue: Number(values.discountValue),
                 startDate: values.startDate,
                 endDate: values.endDate || null,
                 isActive: true, // Set default
+                // discountType is already in values
+                // name is already in values
             };
+            // --- END FIX ---
 
+
+            // This fetch will fail as the API route is commented out/disabled
             const response = await fetch("/api/promotions", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -63,6 +98,18 @@ export function CreatePromotionModal({ opened, onClose, products, onPromotionCre
             });
 
             const result: ApiResponse<PromotionWithProduct> = await response.json();
+            // Check if the route indicated it's disabled (e.g., 404 status)
+            if (response.status === 404 && result.error?.includes("desativada")) {
+                 notifications.show({
+                     title: "Funcionalidade Indisponível",
+                     message: "A criação de promoções está desativada no momento.",
+                     color: "yellow",
+                 });
+                 // Optionally close modal even if disabled
+                 // onClose();
+                 return; // Stop further processing
+            }
+
             if (!response.ok || !result.success) {
                 throw new Error(result.error || "Falha ao criar promoção");
             }
@@ -109,6 +156,7 @@ export function CreatePromotionModal({ opened, onClose, products, onPromotionCre
                         <Select
                             label="Tipo de Desconto"
                             data={[
+                                // Use placeholder enum values
                                 { value: DiscountType.PERCENTAGE, label: "Percentagem (%)" },
                                 { value: DiscountType.FIXED, label: "Valor Fixo (R$)" },
                             ]}

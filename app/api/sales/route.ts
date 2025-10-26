@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
         session.user.role === Role.Server ||
         session.user.role === Role.Bartender ||
         session.user.role === Role.Manager ||
-        session.user.role === Role.Admin;
+        session.user.role === Role.OWNER;
 
     if (!isAllowedRole) {
         return NextResponse.json<ApiResponse>(

@@ -39,16 +39,22 @@ export function VisitSelector({
   onVisitSelect,
   selectedVisit,
 }: VisitSelectorProps) {
+  // ---- START FIX ----
+  // Remove onOptionSubmit from here
   const combobox = useCombobox({
-    onOptionSubmit: (val) => {
-      const selected = visits?.find((v) => v.id === val);
-      if (selected) {
-        onVisitSelect(selected);
-        setSearch(selected.client.name); // Show name in input after selection
-      }
-      combobox.closeDropdown();
-    },
+    // onOptionSubmit: (val) => { ... }, // REMOVED
   });
+
+  // Create the handler function separately
+  const handleOptionSubmit = (val: string) => {
+    const selected = visits?.find((v) => v.id === val);
+    if (selected) {
+      onVisitSelect(selected);
+      setSearch(selected.client.name); // Show name in input after selection
+    }
+    combobox.closeDropdown();
+  };
+  // ---- END FIX ----
 
   const [search, setSearch] = useState("");
   const [debouncedSearch] = useDebouncedValue(search, 300);
@@ -93,7 +99,10 @@ export function VisitSelector({
   return (
     <Combobox
       store={combobox}
-      onOptionSubmit={(val) => onOptionSubmit(val)}
+      // ---- START FIX ----
+      // Pass the handler function here
+      onOptionSubmit={handleOptionSubmit}
+      // ---- END FIX ----
       withinPortal={false}
     >
       <Combobox.Target>
@@ -104,10 +113,15 @@ export function VisitSelector({
           onChange={(event) => {
             setSearch(event.currentTarget.value);
             combobox.openDropdown();
+            combobox.updateSelectedOptionIndex(); // Add this line if needed for keyboard nav
           }}
           onClick={() => combobox.openDropdown()}
           onFocus={() => combobox.openDropdown()}
-          onBlur={() => combobox.closeDropdown()}
+          onBlur={() => {
+            combobox.closeDropdown();
+            // Optional: Reset search if nothing selected?
+            // setSearch(selectedVisit ? selectedVisit.client.name : '');
+          }}
           rightSection={isLoading ? <Loader size="xs" /> : <IconSearch />}
         />
       </Combobox.Target>

@@ -17,6 +17,7 @@ import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
 import { ApiResponse } from "@/lib/types";
 import { TransactionStatus, TransactionType } from "@prisma/client";
+import { formatCurrency } from "@/lib/utils"; // Import the function
 
 interface AddCreditModalProps {
   opened: boolean;
@@ -66,7 +67,7 @@ export function AddCreditModal({
       if (response.ok && data.success) {
         notifications.show({
           title: "Sucesso!",
-          message: `Crédito de ${formatCurrency(
+          message: `Crédito de ${formatCurrency( // Now works correctly
             values.amount
           )} adicionado para ${clientName}.`,
           color: "green",

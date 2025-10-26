@@ -1,7 +1,7 @@
 // PATH: app/dashboard/floorplan/components/CreateVenueObjectModal.tsx
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Modal,
   TextInput,
@@ -11,11 +11,13 @@ import {
   LoadingOverlay,
   Select,
   Switch,
+  Text, // Ensure Text is imported
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
 import { ApiResponse } from "@/lib/types";
 import { VenueObject, VenueObjectType, Workstation } from "@prisma/client";
+// Removed unused Decimal import
 
 interface CreateVenueObjectModalProps {
   opened: boolean;
@@ -25,17 +27,19 @@ interface CreateVenueObjectModalProps {
   workstations: Workstation[]; // Pass workstations for the 'WORKSTATION' type
 }
 
-// Updated objectTypeData to include STORAGE types
-const objectTypeData = [
-  { value: VenueObjectType.TABLE, label: "Mesa" },
-  { value: VenueObjectType.BAR_SEAT, label: "Lugar no Bar" },
-  { value: VenueObjectType.WORKSTATION, label: "Estação (PDV)" },
-  { value: VenueObjectType.ENTERTAINMENT, label: "Entretenimento" },
-  { value: VenueObjectType.IMPASSABLE, label: "Obstrução" },
-  { value: VenueObjectType.STORAGE, label: "Armazenamento Geral" },
-  { value: VenueObjectType.FREEZER, label: "Congelador/Freezer" },
-  { value: VenueObjectType.SHELF, label: "Prateleira/Estante" },
-  { value: VenueObjectType.WORKSTATION_STORAGE, label: "Armazenamento de Estação" },
+// Data for the Select component
+const objectTypeData = Object.values(VenueObjectType).map(value => ({
+    value,
+    label: value.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+}));
+
+
+// Array of storage types
+const storageTypes: VenueObjectType[] = [
+    VenueObjectType.STORAGE,
+    VenueObjectType.FREEZER,
+    VenueObjectType.SHELF,
+    VenueObjectType.WORKSTATION_STORAGE
 ];
 
 export function CreateVenueObjectModal({
@@ -50,22 +54,45 @@ export function CreateVenueObjectModal({
   const form = useForm({
     initialValues: {
       name: "",
-      type: VenueObjectType.TABLE, // Default to TABLE
+      type: VenueObjectType.TABLE as VenueObjectType, // Assert broader type initially
       workstationId: null as string | null,
-      capacity: 2,
+      capacity: 2 as number | '',
       isReservable: false,
-      reservationCost: 0,
+      reservationCost: 0 as number | '',
     },
     validate: {
       name: (value) => (value.trim().length > 0 ? null : "Nome é obrigatório"),
       type: (value) => (value ? null : "Tipo é obrigatório"),
+      // FIX 1: Explicitly cast type for comparison
       workstationId: (value, values) =>
-        values.type === VenueObjectType.WORKSTATION && !value
+        (values.type as VenueObjectType) === VenueObjectType.WORKSTATION && !value
           ? "Estação é obrigatória para este tipo"
           : null,
-      // Add validation for capacity/reservation only for relevant types if needed
+      capacity: (val, values) => {
+           // FIX: Cast values.type here
+           if (![VenueObjectType.TABLE, VenueObjectType.BAR_SEAT].includes(values.type as VenueObjectType)) return null;
+           if (val === null || val === '') return "Capacidade é obrigatória para este tipo";
+           const num = Number(val);
+           return isNaN(num) || num < 1 ? "Capacidade deve ser 1 ou maior" : null;
+      },
+      reservationCost: (val, values) => {
+           // FIX: Cast values.type here
+           if ((values.type as VenueObjectType) !== VenueObjectType.TABLE || !values.isReservable) return null;
+           if (val === null || val === '') return "Custo é obrigatório para reserva";
+           const num = Number(val);
+           return isNaN(num) || num < 0 ? "Custo deve ser um número positivo ou zero" : null;
+      },
     },
   });
+
+  // Reset form when modal closes
+  useEffect(() => {
+    if (!opened) {
+      form.reset();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [opened]);
+
 
   // Get workstation data for the Select
   const workstationSelectData = workstations.map((w) => ({
@@ -79,23 +106,24 @@ export function CreateVenueObjectModal({
   const handleSubmit = async (values: typeof form.values) => {
     setIsSubmitting(true);
     try {
+        const currentType = values.type as VenueObjectType; // Cast for checks
+        const payload = {
+            name: values.name,
+            floorPlanId: floorPlanId,
+            type: currentType,
+            anchorX: 0,
+            anchorY: 0,
+            // FIX: Cast currentType here
+            capacity: [VenueObjectType.TABLE, VenueObjectType.BAR_SEAT].includes(currentType) && values.capacity !== '' ? Number(values.capacity) : null,
+            isReservable: currentType === VenueObjectType.TABLE ? values.isReservable : false,
+            reservationCost: (currentType === VenueObjectType.TABLE && values.isReservable && values.reservationCost !== '') ? Number(values.reservationCost).toString() : null,
+            workstationId: currentType === VenueObjectType.WORKSTATION ? values.workstationId : null,
+        };
+
       const response = await fetch("/api/venue-objects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...values,
-          floorPlanId: floorPlanId,
-          // Only send capacity if relevant type
-          capacity: [VenueObjectType.TABLE, VenueObjectType.BAR_SEAT].includes(values.type) ? values.capacity : null,
-          // Only send reservable/cost if relevant type
-          isReservable: values.type === VenueObjectType.TABLE ? values.isReservable : false,
-          reservationCost: (values.type === VenueObjectType.TABLE && values.isReservable) ? values.reservationCost.toString() : null,
-          // Ensure workstationId is null if type is not WORKSTATION
-          workstationId:
-            values.type === VenueObjectType.WORKSTATION
-              ? values.workstationId
-              : null,
-        }),
+        body: JSON.stringify(payload),
       });
 
       const data: ApiResponse<VenueObject> = await response.json();
@@ -106,7 +134,6 @@ export function CreateVenueObjectModal({
           message: "Objeto criado com sucesso!",
           color: "green",
         });
-        form.reset();
         onSuccess();
       } else {
         notifications.show({
@@ -128,17 +155,12 @@ export function CreateVenueObjectModal({
   };
 
   const handleClose = () => {
-    form.reset();
     onClose();
   };
 
-  // Determine if the current type is a storage type
-  const isStorageType = [
-    VenueObjectType.STORAGE,
-    VenueObjectType.FREEZER,
-    VenueObjectType.SHELF,
-    VenueObjectType.WORKSTATION_STORAGE
-  ].includes(formValues.type);
+  // FIX 2: Explicitly cast type for includes check
+  const isStorageType = storageTypes.includes(formValues.type as VenueObjectType);
+  // END FIX 2
 
   return (
     <Modal opened={opened} onClose={handleClose} title="Novo Objeto na Planta">
@@ -156,12 +178,29 @@ export function CreateVenueObjectModal({
             label="Tipo de Objeto"
             data={objectTypeData}
             {...form.getInputProps("type")}
+            // FIX 3: Ensure value passed is string and handle potential null
+            onChange={(value) => {
+                 const selectedType = value as VenueObjectType | null;
+                 form.setFieldValue('type', selectedType ?? VenueObjectType.TABLE);
+                 if (selectedType !== VenueObjectType.WORKSTATION) {
+                     form.setFieldValue('workstationId', null);
+                 }
+                 // FIX: Cast selectedType here
+                 if (!selectedType || ![VenueObjectType.TABLE, VenueObjectType.BAR_SEAT].includes(selectedType as VenueObjectType)) {
+                     form.setFieldValue('capacity', '');
+                 }
+                 if (selectedType !== VenueObjectType.TABLE) {
+                     form.setFieldValue('isReservable', false);
+                     form.setFieldValue('reservationCost', '');
+                 }
+            }}
+            // END FIX 3
           />
 
           {/* Conditional Fields based on Type */}
 
-          {/* --- WORKSTATION Specific --- */}
-          {formValues.type === VenueObjectType.WORKSTATION && (
+          {/* FIX: Cast formValues.type */}
+          {(formValues.type as VenueObjectType) === VenueObjectType.WORKSTATION && (
             <Select
               required
               label="Estação de Trabalho Vinculada"
@@ -173,30 +212,43 @@ export function CreateVenueObjectModal({
             />
           )}
 
-          {/* --- TABLE/SEAT Specific --- */}
-          {(formValues.type === VenueObjectType.TABLE ||
-            formValues.type === VenueObjectType.BAR_SEAT) && (
+          {/* FIX: Cast formValues.type */}
+          {[VenueObjectType.TABLE, VenueObjectType.BAR_SEAT].includes(formValues.type as VenueObjectType) && (
             <NumberInput
+              required
               label="Capacidade (lugares)"
+              placeholder="2"
               min={1}
+              step={1}
+              allowDecimal={false}
               {...form.getInputProps("capacity")}
             />
           )}
 
-          {/* --- TABLE Specific --- */}
-           {formValues.type === VenueObjectType.TABLE && (
+          {/* FIX: Cast formValues.type */}
+           {(formValues.type as VenueObjectType) === VenueObjectType.TABLE && (
             <>
                 <Switch
                   label="Pode ser reservado?"
                   {...form.getInputProps('isReservable', { type: 'checkbox' })}
                   mt="sm"
+                  onChange={(event) => {
+                      const checked = event.currentTarget.checked;
+                      form.setFieldValue('isReservable', checked);
+                      if (!checked) {
+                          form.setFieldValue('reservationCost', '');
+                      }
+                  }}
                 />
                 {formValues.isReservable && (
                  <NumberInput
+                    required
                     label="Custo da Reserva (R$)"
+                    placeholder="0.00"
                     decimalScale={2}
                     fixedDecimalScale
                     min={0}
+                    step={0.01}
                     {...form.getInputProps('reservationCost')}
                     mt="xs"
                  />
@@ -204,15 +256,11 @@ export function CreateVenueObjectModal({
             </>
            )}
 
-            {/* --- STORAGE Specific (No specific fields needed for now) --- */}
-            {/* {isStorageType && (
+            {isStorageType && (
                 <Text size="sm" c="dimmed" mt="sm">Este objeto será usado como local de estoque.</Text>
-            )} */}
+            )}
 
-
-          {/* --- IMPASSABLE/ENTERTAINMENT (No specific fields needed) --- */}
-
-          <Button type="submit" mt="xl">
+          <Button type="submit" mt="xl" loading={isSubmitting}>
             Salvar Objeto
           </Button>
         </Stack>

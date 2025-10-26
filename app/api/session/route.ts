@@ -17,7 +17,6 @@ export async function GET(req: NextRequest) {
             name: session.user.name,
             role: session.user.role,
             isLoggedIn: true,
-            // Exclude PIN even if it exists in the session store
         };
          return NextResponse.json<ApiResponse<StaffSession>>(
              { success: true, data: sessionData },

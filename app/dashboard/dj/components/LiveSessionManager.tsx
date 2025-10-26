@@ -19,7 +19,7 @@ import {
 import { IconPlayerPlay, IconPlayerStop, IconPlus, IconTrash } from "@tabler/icons-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ApiResponse } from "@/lib/types";
-import { DJSession, VinylRecord, DJSetTrack } from "@prisma/client"; // Added DJSetTrack
+import { DJSession, VinylRecord, DJSetTrack } from "@prisma/client"; // DJSetTrack is already imported
 import { useState, useEffect } from "react";
 import { notifications } from "@mantine/notifications";
 import { EventWithEntertainer } from "./ScheduleManager";
@@ -29,7 +29,12 @@ import { ptBR } from "date-fns/locale";
 // Define complex type for the live session response
 type LiveSessionResponse = DJSession & {
   event: EventWithEntertainer;
-  tracksPlayed: (DJSetTrack & { vinylRecord: VinylRecord })[]; // DJSetTrack is now imported
+  tracksPlayed: (DJSetTrack & { vinylRecord: VinylRecord })[];
+};
+
+// Define the specific type for the add track API response data
+type AddTrackResponseData = DJSetTrack & {
+    vinylRecord: VinylRecord;
 };
 
 // Helper to fetch live session
@@ -89,9 +94,12 @@ export function LiveSessionManager() {
         notifications.show({ title: "Sucesso", message: "Sessão iniciada!", color: "green" });
         queryClient.invalidateQueries({ queryKey: ["liveDjSession"] });
       } else {
-        notifications.show({ title: "Erro", message: data.error, color: "red" });
+        notifications.show({ title: "Erro", message: data.error || "Falha ao iniciar sessão", color: "red" });
       }
     },
+     onError: (error: any) => { // Added onError
+        notifications.show({ title: "Erro", message: error?.message || "Erro inesperado", color: "red" });
+     }
   });
 
   // Mutation to END a session
@@ -107,9 +115,12 @@ export function LiveSessionManager() {
         notifications.show({ title: "Sucesso", message: "Sessão encerrada!", color: "gray" });
         queryClient.invalidateQueries({ queryKey: ["liveDjSession"] });
       } else {
-        notifications.show({ title: "Erro", message: data.error, color: "red" });
+        notifications.show({ title: "Erro", message: data.error || "Falha ao encerrar sessão", color: "red" });
       }
     },
+     onError: (error: any) => { // Added onError
+        notifications.show({ title: "Erro", message: error?.message || "Erro inesperado", color: "red" });
+     }
   });
 
   const handleStartSession = () => {
@@ -148,6 +159,9 @@ export function LiveSessionManager() {
                             </Text>
                         </Group>
                     ))}
+                    {liveSession.tracksPlayed.length === 0 && (
+                        <Text c="dimmed" size="sm">Nenhuma track adicionada ainda.</Text>
+                    )}
                 </Stack>
 
                 <Button
@@ -156,6 +170,7 @@ export function LiveSessionManager() {
                     mt="xl"
                     onClick={handleEndSession}
                     loading={endSession.isPending}
+                    disabled={endSession.isPending} // Disable while ending
                 >
                     Encerrar Sessão
                 </Button>
@@ -176,21 +191,28 @@ export function LiveSessionManager() {
         <Title order={3}>Nenhuma sessão ao vivo</Title>
         <Text>Selecione um evento agendado para iniciar a sessão.</Text>
         <Select
-          label="Eventos Agendados"
-          placeholder="Selecione..."
+          label="Eventos Agendados (Futuros)"
+          placeholder={events === undefined ? "Carregando..." : "Selecione..."}
           data={eventOptions}
           value={selectedEvent}
           onChange={setSelectedEvent}
-          disabled={!events}
+          disabled={!events || startSession.isPending} // Also disable while starting
+          searchable
+          clearable
         />
         <Button
           leftSection={<IconPlayerPlay size={14} />}
           onClick={handleStartSession}
-          disabled={!selectedEvent}
+          disabled={!selectedEvent || startSession.isPending}
           loading={startSession.isPending}
         >
           Iniciar Sessão (Go Live)
         </Button>
+         {isError && ( // Show error if fetching live session failed
+            <Alert color="red" title="Erro" mt="md">
+                {(error as Error)?.message || "Não foi possível verificar a sessão ao vivo."}
+            </Alert>
+         )}
       </Stack>
     </Paper>
   );
@@ -206,9 +228,14 @@ function AddTrackToSession({ sessionId }: { sessionId: string }) {
     // Fetch all vinyl records
     useEffect(() => {
         const fetchRecords = async () => {
-            const res = await fetch("/api/vinyl-records");
-            const data: ApiResponse<VinylRecord[]> = await res.json();
-            if (data.success) setVinylRecords(data.data ?? []); // Handle potential undefined data
+            try { // Added try-catch
+                const res = await fetch("/api/vinyl-records");
+                const data: ApiResponse<VinylRecord[]> = await res.json();
+                if (data.success) setVinylRecords(data.data ?? []);
+                else console.error("Failed to fetch vinyl records:", data.error);
+            } catch (err) {
+                console.error("Error fetching vinyl records:", err);
+            }
         }
         fetchRecords();
     }, []);
@@ -220,17 +247,20 @@ function AddTrackToSession({ sessionId }: { sessionId: string }) {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ sessionId, vinylRecordId }),
         }).then((res) => res.json()),
-       onSuccess: (data: ApiResponse) => {
-            if (data.success && data.data) { // Check data.data exists
+       // --- FIX: Explicitly type 'data' here ---
+       onSuccess: (data: ApiResponse<AddTrackResponseData>) => {
+       // --- END FIX ---
+            // Now TypeScript knows data.data has vinylRecord
+            if (data.success && data.data?.vinylRecord) {
                 notifications.show({ title: "Track Adicionada", message: `Track ${data.data.vinylRecord.title} registrada.`, color: "blue" });
                 queryClient.invalidateQueries({ queryKey: ["liveDjSession"] });
                 setSelectedRecord(null);
             } else {
-                 notifications.show({ title: "Erro", message: data.error || "Falha ao adicionar track", color: "red" });
+                 notifications.show({ title: "Erro", message: data.error || "Falha ao adicionar track (resposta inválida)", color: "red" });
             }
        },
-       onError: (error: any) => { // Added onError handler
-            notifications.show({ title: "Erro", message: error?.message || "Erro inesperado", color: "red" });
+       onError: (error: any) => {
+            notifications.show({ title: "Erro", message: error?.message || "Erro inesperado ao adicionar track", color: "red" });
        }
     });
 
@@ -248,11 +278,12 @@ function AddTrackToSession({ sessionId }: { sessionId: string }) {
                 onChange={setSelectedRecord}
                 searchable
                 clearable
+                disabled={addTrack.isPending} // Disable select while adding
             />
             <Button
                 leftSection={<IconPlus size={14} />}
                 onClick={() => { if(selectedRecord) addTrack.mutate(selectedRecord) }}
-                disabled={!selectedRecord || addTrack.isPending} // Disable while mutating
+                disabled={!selectedRecord || addTrack.isPending}
                 loading={addTrack.isPending}
             >
                 Adicionar Track

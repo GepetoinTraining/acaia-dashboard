@@ -19,9 +19,7 @@ const links = [
     { icon: Armchair, label: "Planta & Mesas", href: "/dashboard/floorplan" },
     { icon: Martini, label: "Produtos & Receitas", href: "/dashboard/products" },
     { icon: Package, label: "Ingredientes", href: "/dashboard/ingredients"},
-    // --- Use the corrected icon ---
-    { icon: CookingPot, label: "Receitas de Preparo", href: "/dashboard/prep-recipes"}, // <-- CORRECTED ICON
-    // --- End correction ---
+    { icon: CookingPot, label: "Receitas de Preparo", href: "/dashboard/prep-recipes"},
     { icon: Archive, label: "Estoque", href: "/dashboard/stock" },
     { icon: Music, label: "Artistas & Eventos", href: "/dashboard/entertainers" },
     { icon: Disc, label: "Vinil & DJ Sets", href: "/dashboard/vinyl" },
@@ -85,19 +83,30 @@ export function MainNav() {
                         variant="subtle"
                         styles={(theme) => ({
                             root: {
-                                borderRadius: theme.radius.sm,
-                                '&[data-active]': {
-                                    backgroundColor: theme.colors.blue[0],
-                                    color: theme.colors.blue[9],
-                                    fontWeight: 500,
+                              borderRadius: theme.radius.sm,
+
+                              // Styles for the active state (independent of color scheme)
+                              '&[data-active]': {
+                                backgroundColor: theme.colors.blue[0],
+                                color: theme.colors.blue[9],
+                                fontWeight: 500,
+                                // Target SVG specifically within active link
+                                '& svg': {
+                                   color: theme.colors.blue[7],
                                 },
-                                '&[data-active] svg': {
-                                     color: theme.colors.blue[7],
-                                },
-                                '&:hover': {
-                                    backgroundColor: theme.colorScheme === 'dark' ? theme.colors.dark[6] : theme.colors.gray[1],
-                                }
-                            }
+                              },
+
+                              // Default hover state (will apply in light mode)
+                              '&:hover:not([data-active])': {
+                                  backgroundColor: theme.colors.gray[1],
+                              },
+
+                              // Specific hover state WHEN in dark mode
+                              '[data-mantine-color-scheme="dark"] &:hover:not([data-active])': {
+                                  backgroundColor: theme.colors.dark[6],
+                              },
+                            },
+                             // REMOVED leftSection: {} as it was causing a syntax error
                         })}
                     />
                 ))}

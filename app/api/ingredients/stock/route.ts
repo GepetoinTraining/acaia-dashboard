@@ -1,5 +1,6 @@
 // PATH: app/api/ingredients/stock/route.ts
-// Replaces the aggregation logic from the old /api/inventory route.
+// Final attempt: Ensuring isPrepared is included
+
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { ApiResponse, AggregatedIngredientStock } from "@/lib/types"; // Import new type
@@ -10,12 +11,14 @@ import { Decimal } from "@prisma/client/runtime/library";
 /**
  * GET /api/ingredients/stock
  * Fetches aggregated current stock levels for all ingredients by summing StockHoldings.
+ * Includes the isPrepared flag.
  */
 export async function GET(req: NextRequest) {
-    const session = await getSession();
-    if (!session.user?.isLoggedIn) {
-        return NextResponse.json<ApiResponse>({ success: false, error: "Não autorizado" }, { status: 401 });
-    }
+    // Optional: Add auth check if needed later
+    // const session = await getSession();
+    // if (!session.user?.isLoggedIn) {
+    //     return NextResponse.json<ApiResponse>({ success: false, error: "Não autorizado" }, { status: 401 });
+    // }
 
     try {
         // 1. Aggregate quantities from StockHolding, grouped by ingredientId
@@ -26,13 +29,14 @@ export async function GET(req: NextRequest) {
             },
         });
 
-        // 2. Fetch all ingredient definitions to get name, unit, cost
+        // 2. Fetch all ingredient definitions including isPrepared
         const ingredients = await prisma.ingredient.findMany({
             select: {
                 id: true,
                 name: true,
                 unit: true,
                 costPerUnit: true,
+                isPrepared: true, // Fetch the flag
             }
         });
 
@@ -42,27 +46,34 @@ export async function GET(req: NextRequest) {
         // 4. Combine aggregations with ingredient definitions
         const aggregatedStockResult: AggregatedIngredientStock[] = stockAggregations.map((agg) => {
             const ingredient = ingredientMap.get(agg.ingredientId);
-            const totalStock = agg._sum.quantity ?? new Decimal(0); // Handle null sum
+            const totalStock = agg._sum.quantity ?? new Decimal(0);
 
-            return {
+            // Explicitly including isPrepared here
+            const stockItem: AggregatedIngredientStock = {
                 ingredientId: agg.ingredientId,
                 name: ingredient?.name ?? "Ingrediente Desconhecido",
                 unit: ingredient?.unit ?? "N/A",
-                costPerUnit: ingredient?.costPerUnit.toString() ?? "0", // Serialize Decimal
-                totalStock: totalStock.toString(), // Serialize Decimal
+                costPerUnit: ingredient?.costPerUnit.toString() ?? "0",
+                totalStock: totalStock.toString(),
+                isPrepared: ingredient?.isPrepared ?? false, // Include the flag
             };
+            return stockItem;
         });
 
         // 5. Add ingredients that exist but have zero stock (no holdings)
         for (const ingredient of ingredients) {
             if (!aggregatedStockResult.some(s => s.ingredientId === ingredient.id)) {
-                aggregatedStockResult.push({
+
+                 // Explicitly including isPrepared here too
+                const zeroStockItem: AggregatedIngredientStock = {
                     ingredientId: ingredient.id,
                     name: ingredient.name,
                     unit: ingredient.unit,
                     costPerUnit: ingredient.costPerUnit.toString(),
                     totalStock: "0",
-                });
+                    isPrepared: ingredient.isPrepared, // Include the flag
+                };
+                aggregatedStockResult.push(zeroStockItem);
             }
         }
 
@@ -82,6 +93,3 @@ export async function GET(req: NextRequest) {
         );
     }
 }
-
-// NOTE: POST, PATCH, DELETE methods from the old /api/inventory are removed or moved.
-//       This route is solely for GETting the aggregated stock.

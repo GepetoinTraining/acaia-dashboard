@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
     const isAllowedRole =
         session.user.role === Role.Server ||
         session.user.role === Role.Bartender ||
-        session.user.role === Role.Manager ||
+        session.user.role === Role.MANAGER ||
         session.user.role === Role.OWNER;
 
     if (!isAllowedRole) {

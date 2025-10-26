@@ -77,7 +77,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
     const session = await getSession();
     // Stricter role check
-    if (!session.user?.isLoggedIn || (session.user.role !== Role.OWNER && session.user.role !== Role.Manager)) {
+    if (!session.user?.isLoggedIn || (session.user.role !== Role.OWNER && session.user.role !== Role.MANAGER)) {
         return NextResponse.json<ApiResponse>(
             { success: false, error: "Não autorizado (Admin/Manager required)" },
             { status: 403 }

@@ -1,4 +1,6 @@
-// PATH: app/api/ingredients/stock/route.ts
+// PATH: app/api/stock/route.ts
+// NOTE: This is the CORRECTED GET function including isPrepared
+
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { ApiResponse, AggregatedIngredientStock } from "@/lib/types"; // Import new type
@@ -46,7 +48,7 @@ export async function GET(req: NextRequest) {
             const ingredient = ingredientMap.get(agg.ingredientId);
             const totalStock = agg._sum.quantity ?? new Decimal(0);
 
-            // --- FIX: Added isPrepared here ---
+            // --- Ensure isPrepared is included here ---
             return {
                 ingredientId: agg.ingredientId,
                 name: ingredient?.name ?? "Ingrediente Desconhecido",
@@ -55,13 +57,13 @@ export async function GET(req: NextRequest) {
                 totalStock: totalStock.toString(),
                 isPrepared: ingredient?.isPrepared ?? false, // Add the flag
             };
-            // --- END FIX ---
+            // --- End Fix ---
         });
 
         // 5. Add ingredients that exist but have zero stock (no holdings)
         for (const ingredient of ingredients) {
             if (!aggregatedStockResult.some(s => s.ingredientId === ingredient.id)) {
-                // --- FIX: Added isPrepared here too ---
+                // --- Ensure isPrepared is included here too ---
                 aggregatedStockResult.push({
                     ingredientId: ingredient.id,
                     name: ingredient.name,
@@ -70,7 +72,7 @@ export async function GET(req: NextRequest) {
                     totalStock: "0",
                     isPrepared: ingredient.isPrepared, // Add the flag here too
                 });
-                // --- END FIX ---
+                // --- End Fix ---
             }
         }
 

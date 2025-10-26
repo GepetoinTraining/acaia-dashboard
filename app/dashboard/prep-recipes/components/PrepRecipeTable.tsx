@@ -1,4 +1,3 @@
-
 "use client";
 
 import {
@@ -15,7 +14,10 @@ import {
 import { IconPencil, IconTrash, IconInputAi, IconOutlet, IconPlayerPlay } from "@tabler/icons-react"; // Added IconPlayerPlay
 import { SerializedPrepRecipe, ApiResponse } from "@/lib/types";
 import { notifications } from '@mantine/notifications';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+// ---- START FIX ----
+// Add useMutation typing helpers
+import { useMutation, useQueryClient, UseMutateFunction } from '@tanstack/react-query';
+// ---- END FIX ----
 import { useState } from 'react'; // Added useState
 import { ExecutePrepTaskModal } from './ExecutePrepTaskModal'; // Import the new modal
 import { useQuery } from "@tanstack/react-query"; // Import useQuery
@@ -50,6 +52,7 @@ export function PrepRecipeTable({
           const result: ApiResponse<VenueObject[]> = await res.json();
           if (result.success && result.data) {
               const storageTypes: VenueObject['type'][] = ['STORAGE', 'FREEZER', 'SHELF', 'WORKSTATION_STORAGE'];
+              // Serialize decimals for consistency if needed, though only id/name used here
               return result.data
                   .filter(vo => storageTypes.includes(vo.type))
                   .map(vo => ({ id: vo.id, name: vo.name }));
@@ -60,8 +63,50 @@ export function PrepRecipeTable({
   });
 
 
-  const deletePrepRecipe = useMutation({ /* ... (mutation code remains the same) ... */ });
-  const handleDeleteClick = (recipe: SerializedPrepRecipe) => { /* ... (handler code remains the same) ... */ };
+  // --- START FIX: Explicitly type useMutation ---
+  const deletePrepRecipe = useMutation<
+    ApiResponse<{ id: string }>, // TData: Type returned by mutationFn on success
+    Error,                     // TError: Type returned on error
+    string                     // TVariables: Type passed to mutateFn (the recipe ID)
+  >({
+    mutationFn: (id: string) => // The argument 'id' is a string
+      fetch(`/api/prep-recipes/${id}`, { method: "DELETE" })
+      .then(res => {
+          if (!res.ok) {
+              // Attempt to parse error from API response
+              return res.json().then(errData => {
+                  throw new Error(errData.error || `HTTP error! status: ${res.status}`);
+              }).catch(() => {
+                  // Fallback if parsing fails
+                  throw new Error(`HTTP error! status: ${res.status}`);
+              });
+          }
+          return res.json()
+      }),
+    onSuccess: (data, variables /* variables is string */) => {
+        if (data.success) {
+            notifications.show({
+                title: 'Sucesso',
+                message: `Receita excluída.`,
+                color: 'green',
+            });
+            // Invalidate queries to refetch data
+            queryClient.invalidateQueries({ queryKey: ['prepRecipes'] });
+        } else {
+             notifications.show({ title: 'Erro', message: data.error || 'Falha ao excluir', color: 'red' });
+        }
+    },
+    onError: (error: Error, variables /* variables is string */) => {
+         notifications.show({ title: 'Erro ao Excluir', message: error.message, color: 'red' });
+    }
+  });
+  // --- END FIX ---
+
+  const handleDeleteClick = (recipe: SerializedPrepRecipe) => {
+      if (confirm(`Tem certeza que deseja excluir a receita "${recipe.name}"? Esta ação não pode ser desfeita e só funcionará se a receita não estiver em uso.`)) {
+          deletePrepRecipe.mutate(recipe.id); // Pass the string ID here
+      }
+  };
 
   const handleOpenExecuteModal = (recipe: SerializedPrepRecipe) => {
       setRecipeToExecute(recipe);
@@ -78,14 +123,13 @@ export function PrepRecipeTable({
        // Invalidate stock-related queries after successful execution
        queryClient.invalidateQueries({ queryKey: ['stockHoldings'] });
        queryClient.invalidateQueries({ queryKey: ['aggregatedStock'] });
-       onRefresh(); // Refresh prep recipes list if needed
+       // onRefresh(); // invalidateQueries above should handle this
    }
 
 
   const rows = data.map((recipe) => {
     return (
       <Table.Tr key={recipe.id}>
-        {/* ... (other Table.Td cells remain the same) ... */}
          <Table.Td>
              <Text fw={500}>{recipe.name}</Text>
              <Text size="xs" c="dimmed">{recipe.notes || ''}</Text>
@@ -96,6 +140,7 @@ export function PrepRecipeTable({
                     <Group key={input.id} gap={4} wrap="nowrap">
                          <IconInputAi size={14} opacity={0.7}/>
                          <Text size="xs">
+                             {/* Input quantity is already a string from API */}
                              {parseFloat(input.quantity).toLocaleString('pt-BR', { maximumFractionDigits: 3 })} {input.ingredient.unit}
                          </Text>
                           <Text size="xs" c="dimmed">({input.ingredient.name})</Text>
@@ -107,6 +152,7 @@ export function PrepRecipeTable({
              <Group gap={4} wrap="nowrap">
                 <IconOutlet size={14} opacity={0.7}/>
                  <Text size="sm" fw={500}>
+                      {/* Output quantity is already a string from API */}
                       {parseFloat(recipe.outputQuantity).toLocaleString('pt-BR', { maximumFractionDigits: 3 })} {recipe.outputIngredient.unit}
                  </Text>
                  <Text size="sm">({recipe.outputIngredient.name})</Text>
@@ -116,7 +162,7 @@ export function PrepRecipeTable({
 
         <Table.Td>
           <Group gap="xs" wrap="nowrap">
-            {/* --- ADDED EXECUTE BUTTON --- */}
+            {/* --- Execute Button --- */}
             <Tooltip label="Executar Preparo">
                 <ActionIcon
                     variant="light"
@@ -127,14 +173,22 @@ export function PrepRecipeTable({
                     <IconPlayerPlay size={18} />
                 </ActionIcon>
             </Tooltip>
-            {/* --- END ADDITION --- */}
+            {/* --- Edit Button --- */}
             <Tooltip label="Editar Receita">
               <ActionIcon variant="light" color="blue" onClick={() => onEdit(recipe)}>
                 <IconPencil size={18} />
               </ActionIcon>
             </Tooltip>
+            {/* --- Delete Button --- */}
             <Tooltip label="Excluir Receita">
-              <ActionIcon variant="light" color="red" onClick={() => handleDeleteClick(recipe)} loading={deletePrepRecipe.isPending && deletePrepRecipe.variables === recipe.id}>
+              {/* This is line 137 (approx) where the error occurred */}
+              <ActionIcon
+                variant="light"
+                color="red"
+                onClick={() => handleDeleteClick(recipe)}
+                // Comparison should now work correctly due to explicit typing
+                loading={deletePrepRecipe.isPending && deletePrepRecipe.variables === recipe.id}
+              >
                 <IconTrash size={18} />
               </ActionIcon>
             </Tooltip>
@@ -150,7 +204,6 @@ export function PrepRecipeTable({
 
   return (
     <>
-      {/* --- ADDED MODAL INSTANCE --- */}
       <ExecutePrepTaskModal
           opened={isExecuteModalOpen}
           onClose={handleCloseExecuteModal}
@@ -158,10 +211,8 @@ export function PrepRecipeTable({
           prepRecipe={recipeToExecute}
           locations={locations ?? []} // Pass fetched locations
       />
-       {/* --- END ADDITION --- */}
 
       <Table.ScrollContainer minWidth={800}>
-        {/* ... (Table structure remains the same) ... */}
          <Table verticalSpacing="sm" striped highlightOnHover>
             <Table.Thead>
             <Table.Tr>

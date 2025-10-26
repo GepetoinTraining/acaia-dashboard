@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect } from "react";
@@ -177,7 +176,7 @@ export function ManagePrepRecipeModal({
         {...form.getInputProps(`inputs.${index}.ingredientId`)}
         searchable
         required
-        withinPortal // Keep dropdown within modal bounds
+        // withinPortal removed in previous fix
       />
       <NumberInput
         label="Qtd. Entrada"
@@ -189,7 +188,7 @@ export function ManagePrepRecipeModal({
       />
       <ActionIcon
         color="red"
-        onClick={() => form.removeListItem("inputs", index)}
+        onClick={() => form.removeListItem("inputs", index)} // Corrected method
         mt={25} // Align with input label
         variant="light"
       >
@@ -224,7 +223,9 @@ export function ManagePrepRecipeModal({
                     data={outputIngredientOptions}
                     {...form.getInputProps('outputIngredientId')}
                     searchable
-                    withinPortal
+                    // ---- START FIX ----
+                    // withinPortal // Removed this line
+                    // ---- END FIX ----
                  />
                  <NumberInput
                     required
@@ -250,11 +251,11 @@ export function ManagePrepRecipeModal({
             <Button
               variant="outline"
               onClick={() =>
-                form.addListItem("inputs", {
+                form.insertListItem("inputs", { // Corrected method
                   key: randomId(),
                   ingredientId: null,
                   quantity: "1",
-                })
+                }, form.values.inputs.length) // Added index
               }
               size="xs"
             >

@@ -1,5 +1,5 @@
-// PATH: app/api/stock/route.ts
-// NOTE: This is the CORRECTED GET function including isPrepared
+// PATH: app/api/ingredients/stock/route.ts
+// Final attempt: Ensuring isPrepared is included
 
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
@@ -9,13 +9,13 @@ import { Prisma } from "@prisma/client";
 import { Decimal } from "@prisma/client/runtime/library";
 
 /**
- * GET /api/stock
+ * GET /api/ingredients/stock
  * Fetches aggregated current stock levels for all ingredients by summing StockHoldings.
  * Includes the isPrepared flag.
  */
 export async function GET(req: NextRequest) {
-    const session = await getSession();
-    // Re-enable auth check if needed later
+    // Optional: Add auth check if needed later
+    // const session = await getSession();
     // if (!session.user?.isLoggedIn) {
     //     return NextResponse.json<ApiResponse>({ success: false, error: "Não autorizado" }, { status: 401 });
     // }
@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
             },
         });
 
-        // 2. Fetch all ingredient definitions to get name, unit, cost, isPrepared
+        // 2. Fetch all ingredient definitions including isPrepared
         const ingredients = await prisma.ingredient.findMany({
             select: {
                 id: true,
@@ -48,31 +48,32 @@ export async function GET(req: NextRequest) {
             const ingredient = ingredientMap.get(agg.ingredientId);
             const totalStock = agg._sum.quantity ?? new Decimal(0);
 
-            // --- Ensure isPrepared is included here ---
-            return {
+            // Explicitly including isPrepared here
+            const stockItem: AggregatedIngredientStock = {
                 ingredientId: agg.ingredientId,
                 name: ingredient?.name ?? "Ingrediente Desconhecido",
                 unit: ingredient?.unit ?? "N/A",
                 costPerUnit: ingredient?.costPerUnit.toString() ?? "0",
                 totalStock: totalStock.toString(),
-                isPrepared: ingredient?.isPrepared ?? false, // Add the flag
+                isPrepared: ingredient?.isPrepared ?? false, // Include the flag
             };
-            // --- End Fix ---
+            return stockItem;
         });
 
         // 5. Add ingredients that exist but have zero stock (no holdings)
         for (const ingredient of ingredients) {
             if (!aggregatedStockResult.some(s => s.ingredientId === ingredient.id)) {
-                // --- Ensure isPrepared is included here too ---
-                aggregatedStockResult.push({
+
+                 // Explicitly including isPrepared here too
+                const zeroStockItem: AggregatedIngredientStock = {
                     ingredientId: ingredient.id,
                     name: ingredient.name,
                     unit: ingredient.unit,
                     costPerUnit: ingredient.costPerUnit.toString(),
                     totalStock: "0",
-                    isPrepared: ingredient.isPrepared, // Add the flag here too
-                });
-                // --- End Fix ---
+                    isPrepared: ingredient.isPrepared, // Include the flag
+                };
+                aggregatedStockResult.push(zeroStockItem);
             }
         }
 
@@ -85,7 +86,7 @@ export async function GET(req: NextRequest) {
         );
 
     } catch (error) {
-        console.error("GET /api/stock error:", error); // Updated path in log
+        console.error("GET /api/ingredients/stock error:", error);
         return NextResponse.json<ApiResponse>(
             { success: false, error: "Erro ao buscar estoque agregado de ingredientes" },
             { status: 500 }

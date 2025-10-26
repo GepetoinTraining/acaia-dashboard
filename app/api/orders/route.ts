@@ -87,7 +87,7 @@ export async function POST(req: NextRequest) {
     productsWithRecipes.forEach((p) => productMap.set(p.id, p));
 
     let totalOrderPrice = new Decimal(0);
-    const orderItemsData = [];
+    const orderItemsData: Prisma.OrderItemCreateManyOrderInput[] = [];
     // Structure to hold stock deductions needed { ingredientId: { required: Decimal, name: string, unit: string } }
     const requiredStockMap = new Map<string, { required: Decimal, name: string, unit: string, locations: string[] }>();
     const prepLocationMap = new Map<string, string>(); // Map<prepStationId, venueObjectId>

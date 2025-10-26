@@ -47,7 +47,8 @@ export function RecentOrders({ orders }: RecentOrdersProps) {
                     </Stack>
                     <Stack align="flex-end" gap={0}>
                       <Text fw={700}>
-                        {formatCurrency(parseFloat(order.total))}
+                        {/* Corrected order.total */}
+                        {formatCurrency(parseFloat(order.total as unknown as string))}
                       </Text>
                       <Text size="xs">
                         {formatDistanceToNow(new Date(order.createdAt), {
@@ -66,7 +67,10 @@ export function RecentOrders({ orders }: RecentOrdersProps) {
                           {item.quantity}x {item.product.name}
                         </Text>
                         <Badge variant="light" color="gray">
-                          {formatCurrency(parseFloat(item.totalPrice))}
+                          {/* ---- START FIX ---- */}
+                          {/* Cast to unknown first, then to string */}
+                          {formatCurrency(parseFloat(item.totalPrice as unknown as string))}
+                          {/* ---- END FIX ---- */}
                         </Badge>
                       </Group>
                     ))}

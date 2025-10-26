@@ -53,7 +53,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
         }
         if (type !== undefined) {
                 // Validate against the imported EntertainerType enum
-            if (!Object.values(EntertainerType).includes(type)) {
+            if (!Object.values(EntertainerType).includes(type as EntertainerType)) {
                 inputError = "Tipo de artista inválido.";
             } else {
                 updateData.type = type; // Assign the validated enum value directly

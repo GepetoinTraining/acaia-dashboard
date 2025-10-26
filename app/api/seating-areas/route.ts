@@ -97,7 +97,7 @@ export async function POST(req: NextRequest) {
         if (!name || name.trim().length < 1) {
             return NextResponse.json<ApiResponse>({ success: false, error: "Nome da área é obrigatório." }, { status: 400 });
         }
-         if (!type || !Object.values(SeatingAreaType).includes(type)) {
+         if (!type || !Object.values(SeatingAreaType).includes(type as SeatingAreaType)) {
              return NextResponse.json<ApiResponse>({ success: false, error: "Tipo de área inválido." }, { status: 400 });
          }
          const numCapacity = capacity ? parseInt(String(capacity)) : null;

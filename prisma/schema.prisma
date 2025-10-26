@@ -1,5 +1,5 @@
-// This is your Prisma schema file for Acaia,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
+// This is the complete schema built from "first principles" based on the detailed vision.
+// This version FIXES all P1012 validation errors.
 
 datasource db {
   provider = "postgresql"
@@ -10,367 +10,429 @@ generator client {
   provider = "prisma-client-js"
 }
 
-// ---
-// SECTION 1: ENUMERATIONS (For Type Safety)
-// ---
+// -----------------------------------------------------------------
+// 1. USERS (STAFF) & ROLES
+// -----------------------------------------------------------------
 
-enum ClientStatus {
-  new
-  regular
-  vip
-  whale
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  pin       String   @unique
+  role      Role     @default(SERVER)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orders            HandledOrder[]
+  acknowledgedCalls ServerCall[]   @relation("AcknowledgedCalls")
+  resolvedCalls     ServerCall[]   @relation("ResolvedCalls")
+  
+  // --- FIX ---
+  // Replaced the array with a proper relation to the new 'StaffAssignment' join table.
+  assignedWorkstations StaffAssignment[]
 }
 
-// Staff roles expanded for Acaia
-enum StaffRole {
-  Server
-  Bartender
-  Cashier
-  Security
-  Cook
-  HeadChef
+enum Role {
+  SERVER
+  BARTENDER
+  COOK
+  CASHIER
   DJ
-  Manager
-  Admin // Kept Admin
+  MANAGER
+  OWNER
 }
 
-// Types of products offered
+// -----------------------------------------------------------------
+// 2. CLIENTS, WALLETS & AUTHENTICATION
+// -----------------------------------------------------------------
+
+model Client {
+  id            String   @id @default(cuid())
+  name          String
+  phone         String   @unique
+  email         String?  @unique
+  cpf           String?  @unique
+  pin           String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  wallet        ClientWallet?
+  visits        Visit[]
+  orders        Order[]
+  topUpRequests WalletTransaction[]
+}
+
+model ClientWallet {
+  id           String   @id @default(cuid())
+  clientId     String   @unique
+  client       Client   @relation(fields: [clientId], references: [id])
+  balance      Decimal  @default(0.00)
+  updatedAt    DateTime @updatedAt
+
+  transactions WalletTransaction[]
+}
+
+model WalletTransaction {
+  id           String            @id @default(cuid())
+  walletId     String
+  wallet       ClientWallet      @relation(fields: [walletId], references: [id])
+  clientId     String?
+  client       Client?           @relation(fields: [clientId], references: [id])
+  amount       Decimal
+  type         TransactionType
+  status       TransactionStatus
+  proofOfPay   String?
+  approvedBy   String?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+}
+
+enum TransactionType {
+  TOP_UP
+  SPEND
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+// -----------------------------------------------------------------
+// 3. VENUE, VISITS & TABS
+// -----------------------------------------------------------------
+
+model FloorPlan {
+  id        String   @id @default(cuid())
+  name      String
+  width     Int      @default(100)
+  height    Int      @default(100)
+  floorGrid Json?
+
+  objects VenueObject[]
+}
+
+model VenueObject {
+  id            String          @id @default(cuid())
+  name          String
+  floorPlanId   String
+  floorPlan     FloorPlan       @relation(fields: [floorPlanId], references: [id])
+  anchorX       Int
+  anchorY       Int
+  shape         Json
+  type          VenueObjectType @default(TABLE)
+  qrCodeId      String          @unique @default(cuid())
+  capacity      Int?
+  isReservable  Boolean         @default(false)
+  reservationCost Decimal?
+  workstationId   String?
+  workstation     Workstation?    @relation(fields: [workstationId], references: [id])
+
+  visits      Visit[]
+  serverCalls ServerCall[]
+  
+  // --- FIX ---
+  // Replaced the array with a proper relation to the new 'StaffAssignment' join table.
+  assignedStaff StaffAssignment[]
+}
+
+enum VenueObjectType {
+  TABLE
+  BAR_SEAT
+  WORKSTATION
+  ENTERTAINMENT
+  IMPASSABLE
+}
+
+// --- FIX ---
+// This is the NEW explicit join table for the many-to-many relationship
+// between 'User' (Staff) and 'VenueObject' (Workstations).
+model StaffAssignment {
+  userId        String
+  user          User        @relation(fields: [userId], references: [id])
+  venueObjectId String
+  venueObject   VenueObject @relation(fields: [venueObjectId], references: [id])
+  assignedAt    DateTime    @default(now())
+
+  @@id([userId, venueObjectId])
+}
+
+model Tab {
+  id          String   @id @default(cuid())
+  rfid        String   @unique
+  isActive    Boolean  @default(true)
+  isInUse     Boolean  @default(false)
+  
+  // --- FIX ---
+  // Added the other side of the 1-to-1 relation, using the same name "activeVisit".
+  activeVisit Visit?   @relation("activeVisit")
+}
+
+model Visit {
+  id            String       @id @default(cuid())
+  clientId      String
+  client        Client       @relation(fields: [clientId], references: [id])
+  
+  tabId         String       @unique
+  // This side was correct
+  tab           Tab          @relation(fields: [tabId], references: [id], name: "activeVisit")
+  
+  venueObjectId String?
+  venueObject   VenueObject? @relation(fields: [venueObjectId], references: [id])
+  
+  checkInAt     DateTime     @default(now())
+  checkOutAt    DateTime?
+  totalSpent    Decimal      @default(0.00)
+
+  orders      Order[]
+  serverCalls ServerCall[]
+}
+
+// -----------------------------------------------------------------
+// 4. ORDERING SYSTEM
+// -----------------------------------------------------------------
+
+model Workstation {
+  id    String @id @default(cuid())
+  name  String @unique // "BAR", "KITCHEN", "COFFEE", "EXPEDITOR"
+  
+  venueObjects VenueObject[]
+  orderItems   OrderItem[]
+  
+  // --- FIX ---
+  // Added the other side of the 1-to-Many relation with 'Product'.
+  products     Product[]
+}
+
+model Order {
+  id        String      @id @default(cuid())
+  visitId   String
+  visit     Visit       @relation(fields: [visitId], references: [id])
+  clientId  String?
+  client    Client?     @relation(fields: [clientId], references: [id])
+  total     Decimal
+  status    OrderStatus @default(PENDING)
+  createdAt DateTime    @default(now())
+  
+  items     OrderItem[]
+  handledBy HandledOrder[]
+}
+
+model OrderItem {
+  id            String          @id @default(cuid())
+  orderId       String
+  order         Order           @relation(fields: [orderId], references: [id])
+  productId     String
+  product       Product         @relation(fields: [productId], references: [id])
+  quantity      Int
+  unitPrice     Decimal
+  totalPrice    Decimal
+  status        OrderItemStatus @default(PENDING)
+  workstationId String
+  workstation   Workstation     @relation(fields: [workstationId], references: [id])
+  createdAt     DateTime        @default(now())
+  preparedAt    DateTime?
+  deliveredAt   DateTime?
+}
+
+model HandledOrder {
+  orderId String
+  order   Order  @relation(fields: [orderId], references: [id])
+  userId  String
+  user    User   @relation(fields: [userId], references: [id])
+
+  @@id([orderId, userId])
+}
+
+enum OrderStatus {
+  PENDING
+  PREPARING
+  READY
+  DELIVERED
+  CANCELLED
+}
+
+enum OrderItemStatus {
+  PENDING
+  PREPARING
+  READY
+  DELIVERED
+  CANCELLED
+}
+
+// -----------------------------------------------------------------
+// 5. PRODUCTS, RECIPES & INVENTORY
+// -----------------------------------------------------------------
+
+model Ingredient {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  unit        String
+  stock       Decimal  @default(0)
+  costPerUnit Decimal
+  
+  recipeSteps RecipeIngredient[]
+}
+
+model Product {
+  id            String      @id @default(cuid())
+  name          String
+  description   String?
+  price         Decimal
+  imageUrl      String?
+  type          ProductType @default(DRINK)
+  
+  prepStationId String
+  // This side was correct
+  prepStation   Workstation @relation(fields: [prepStationId], references: [id])
+
+  orderItems    OrderItem[]
+  recipe        Recipe?
+}
+
 enum ProductType {
   FOOD
   DRINK
-  OTHER
 }
 
-// Where the product is prepared/served from
-enum PrepStation {
-  KITCHEN
-  BAR
-  TAP
-  BARISTA
-  NONE
+model Recipe {
+  id          String   @id @default(cuid())
+  productId   String   @unique
+  product     Product  @relation(fields: [productId], references: [id])
+  notes       String?
+  difficulty  Int?     @default(1)
+  
+  ingredients RecipeIngredient[]
+  steps       RecipeStep[]
 }
 
-// Renamed from SmallestUnit for clarity
-enum UnitOfMeasure {
-  ml
-  unit
-  gram
-  dose // Added for drinks
+model RecipeIngredient {
+  id           String     @id @default(cuid())
+  recipeId     String
+  recipe       Recipe     @relation(fields: [recipeId], references: [id])
+  ingredientId String
+  ingredient   Ingredient @relation(fields: [ingredientId], references: [id])
+  quantity     Decimal
 }
 
-enum StockMovementType {
-  purchase
-  sale
-  waste
-  adjustment
-  consignment_stock_in // Kept for potential future use
+model RecipeStep {
+  id          String   @id @default(cuid()) // <-- FIX: Was "cDuid()"
+  recipeId    String
+  recipe      Recipe   @relation(fields: [recipeId], references: [id])
+  stepNumber  Int
+  instruction String
+  motion      String?
+  prepTime    Int?
+  cookTime    Int?
+  waitTime    Int?
 }
 
-// Simple status for staff shifts
-enum StaffShiftStatus {
-  active
-  ended
-}
+// -----------------------------------------------------------------
+// 6. ENTERTAINMENT & BI
+// -----------------------------------------------------------------
 
-enum StaffCommissionType {
-  sale // General sales commission
-  // Simplified for MVP, removed CAC types
-}
-
-// Types of Seating Areas
-enum SeatingAreaType {
-  TABLE
-  BAR_SEAT
-  LOUNGE_SEAT
-  BOOTH
-  STAGE_AREA // Area near the stage
-  DJ_BOOTH // The DJ area itself
-  OTHER
-}
-
-// ---
-// SECTION 2: CORE ENTITIES (People & Partners)
-// ---
-
-model Client {
-  id               Int          @id @default(autoincrement())
-  name             String?
-  phoneNumber      String?      @unique
-  createdAt        DateTime     @default(now())
-  status           ClientStatus @default(new)
-  totalVisits      Int          @default(0)
-  lastVisitDate    DateTime?
-  avgSpendPerVisit Decimal      @default(0) // Will need recalculation logic
-  lifetimeSpend    Decimal      @default(0)
-  crmData          Json // Keep flexible CRM data
-
-  // Relation for CAC (kept for potential future use)
-  acquiredByStaffId Int?
-  acquiredByStaff   Staff? @relation("AcquiredClients", fields: [acquiredByStaffId], references: [id])
-
-  // Relations to other tables
-  visits           Visit[]
-  staffCommissions StaffCommission[] @relation("ClientCommissions") // Kept for potential future use
-
-  @@index([acquiredByStaffId])
-}
-
-// Staff model expanded roles
-model Staff {
-  id          Int       @id @default(autoincrement())
-  name        String    @unique
-  defaultRole StaffRole
-  pinCode     String    @unique
-  isActive    Boolean   @default(true)
-  createdAt   DateTime  @default(now())
-
-  // Relations
-  acquiredClients Client[]          @relation("AcquiredClients") // Kept for potential future use
-  shifts          StaffShift[]
-  commissions     StaffCommission[]
-  djSessions      DJSession[] // Staff can be DJs
-  sales           Sale[] // Staff member who processed the sale
-}
-
-// Simplified Entertainer model for MVP
 model Entertainer {
-  id           Int      @id @default(autoincrement())
-  name         String
-  type         String // e.g., "DJ", "Band", "Solo Musician"
-  contactNotes String?
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  // Potential future relations: Schedule, Bookings, Payouts
+  id              String           @id @default(cuid())
+  name            String
+  type            EntertainerType
+  bio             String?
+  imageUrl        String?
+  rate            Decimal?
+  
+  scheduledEvents ScheduledEvent[]
 }
 
-// Partner kept for potential consignment, simplified relations for MVP
-model Partner {
-  id            Int      @id @default(autoincrement())
-  companyName   String   @unique
-  contactPerson String?
-  contactPhone  String?
-  createdAt     DateTime @default(now())
-
-  // Relations
-  products Product[] // Products they supply
-  // Removed PartnerPayouts for MVP
+enum EntertainerType {
+  BAND
+  DJ
 }
 
-// ---
-// SECTION 3: VENUE SPACES & INVENTORY
-// ---
-
-// Replaces Environment and DisplaySpace for MVP
-model SeatingArea {
-  id              Int             @id @default(autoincrement())
-  name            String          @unique // e.g., "T1", "Bar Seat 5", "Lounge Couch A", "DJ Booth"
-  capacity        Int?
-  type            SeatingAreaType @default(TABLE)
-  reservationCost Decimal         @default(0) // Cost to reserve this specific area
-  isActive        Boolean         @default(true)
-  qrCodeToken     String?         @unique // Unique token for generating QR code URL for this table/area
-
-  // Position/Layout Data (for the visual editor - Post-MVP)
-  // posX Int?
-  // posY Int?
-  // width Int?
-  // height Int?
-  // shape String? // e.g., 'rectangle', 'circle'
-
-  // Relations
-  visits Visit[] // Visits currently assigned to this area
+model ScheduledEvent {
+  id            String      @id @default(cuid())
+  entertainerId String
+  entertainer   Entertainer @relation(fields: [entertainerId], references: [id])
+  startTime     DateTime
+  endTime       DateTime
+  
+  liveSession   DJSession?
 }
 
-// InventoryItem adjusted for different units
-model InventoryItem {
-  id                         Int           @id @default(autoincrement())
-  name                       String        @unique // e.g., "Coffee Beans", "Vodka Bottle", "Milk Carton"
-  storageUnitName            String? // e.g., "Bag 1kg", "Bottle 750ml", "Carton 1L"
-  smallestUnit               UnitOfMeasure // e.g., gram, ml, unit, dose
-  storageUnitSizeInSmallest  Decimal?      @default(1) // e.g., 1000 (for 1kg bag in grams), 750 (for bottle in ml), 1 (for unit)
-  reorderThresholdInSmallest Decimal? // Alert level in smallest units
-
-  // Relations
-  products           Product[] // Products that use this item
-  stockLedgerEntries StockLedger[]
-}
-
-// Product model adjusted for Food/Drink and Prep Station
-model Product {
-  id                            Int          @id @default(autoincrement())
-  name                          String // e.g., "Espresso", "Caipirinha", "Cheeseburger"
-  category                      String? // e.g., "Coffee", "Cocktail", "Sandwich"
-  type                          ProductType // FOOD, DRINK, OTHER
-  prepStation                   PrepStation? // KITCHEN, BAR, etc.
-  costPrice                     Decimal      @default(0) // Cost to produce/acquire (for profit calculation)
-  salePrice                     Decimal // Price on the menu
-  deductionAmountInSmallestUnit Decimal      @default(1) // How much InventoryItem.smallestUnit to deduct per sale (e.g., 40 for 40ml vodka dose)
-
-  // Relations
-  inventoryItemId Int? // Which InventoryItem does this deduct from?
-  inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id])
-
-  partnerId Int? // Consignment partner (optional)
-  partner   Partner? @relation(fields: [partnerId], references: [id])
-
-  sales Sale[]
-  // Removed Promotion relation for MVP
-
-  @@index([inventoryItemId])
-  @@index([partnerId])
-  @@index([type])
-  @@index([category])
-}
-
-// ---
-// SECTION 4: "LIVE" SESSIONS & BOOKINGS
-// ---
-
-// Visit simplified, added SeatingArea relation
-model Visit {
-  id                        Int       @id @default(autoincrement())
-  entryTime                 DateTime  @default(now())
-  exitTime                  DateTime?
-  entryFeePaid              Decimal   @default(0) // Might not be applicable, keeping for now
-  consumableCreditTotal     Decimal   @default(0) // Might not be applicable, keeping for now
-  consumableCreditRemaining Decimal   @default(0) // Might not be applicable, keeping for now
-
-  // Relations
-  clientId      Int? // Nullable for walk-ins initially?
-  client        Client?      @relation(fields: [clientId], references: [id])
-  seatingAreaId Int? // The table/area the client is assigned to
-  seatingArea   SeatingArea? @relation(fields: [seatingAreaId], references: [id])
-
-  sales Sale[]
-
-  @@index([clientId])
-  @@index([seatingAreaId])
-}
-
-// StaffShift simplified
-model StaffShift {
-  id           Int              @id @default(autoincrement())
-  clockIn      DateTime         @default(now())
-  clockOut     DateTime?
-  status       StaffShiftStatus @default(active)
-  roleForShift StaffRole // Role performed during this shift
-
-  // Relations
-  staffId Int
-  staff   Staff @relation(fields: [staffId], references: [id])
-
-  @@index([staffId])
-  @@index([status])
-}
-
-// DJ Session model for MVP
 model DJSession {
-  id        Int       @id @default(autoincrement())
-  startTime DateTime  @default(now())
-  endTime   DateTime?
-
-  // Relations
-  djStaffId Int
-  djStaff   Staff @relation(fields: [djStaffId], references: [id])
-  // Maybe add relation to VinylRecord plays later
-
-  @@index([djStaffId])
+  id              String       @id @default(cuid())
+  eventId         String       @unique
+  event           ScheduledEvent @relation(fields: [eventId], references: [id])
+  actualStartTime DateTime     @default(now())
+  actualEndTime   DateTime?
+  status          String       @default("LIVE")
+  
+  tracksPlayed    DJSetTrack[]
 }
 
-// Basic Vinyl Record model
+model DJSetTrack {
+  id            String      @id @default(cuid())
+  sessionId     String
+  session       DJSession   @relation(fields: [sessionId], references: [id])
+  vinylRecordId String
+  vinylRecord   VinylRecord @relation(fields: [vinylRecordId], references: [id])
+  playedAt      DateTime    @default(now())
+}
+
+// -----------------------------------------------------------------
+// 7. VINYL LIBRARY
+// -----------------------------------------------------------------
+
+model VinylLibrarySlot {
+  id       String @id @default(cuid())
+  row      Int
+  column   Int
+  capacity Int    @default(30)
+  
+  records  VinylRecord[]
+
+  @@unique([row, column])
+}
+
 model VinylRecord {
-  id          Int     @id @default(autoincrement())
-  artist      String
-  title       String
-  genre       String?
-  year        Int?
-  timesPlayed Int     @default(0) // Simple tracking for now
-  // Maybe add relation to DJSession plays later
+  id             String   @id @default(cuid())
+  title          String
+  artist         String
+  genre          String?
+  year           Int?
+  imageUrl       String?
+  slotId         String
+  slot           VinylLibrarySlot @relation(fields: [slotId], references: [id])
+  positionInSlot Int
+  
+  setsPlayed     DJSetTrack[]
 
-  @@unique([artist, title]) // Ensure unique records
-  @@index([genre])
-  @@index([artist])
+  @@unique([slotId, positionInSlot])
 }
 
-// ---
-// SECTION 5: TRANSACTIONS & LEDGERS
-// ---
+// -----------------------------------------------------------------
+// 8. SERVER CALL SYSTEM
+// -----------------------------------------------------------------
 
-// Sale simplified, host removed, staff added
-model Sale {
-  id          Int      @id @default(autoincrement())
-  quantity    Int      @default(1)
-  priceAtSale Decimal // Price per unit at time of sale
-  totalAmount Decimal // quantity * priceAtSale
-  // commissionEarned   Decimal   // Removed host commission for MVP
-  // paidWithCredit     Decimal   @default(0) // Removing credit system for MVP
-  // paidWithCashCard   Decimal   @default(0) // Assuming direct payment for MVP
-  createdAt   DateTime @default(now())
+model ServerCall {
+  id            String       @id @default(cuid())
+  visitId       String
+  visit         Visit        @relation(fields: [visitId], references: [id])
+  venueObjectId String
+  venueObject   VenueObject  @relation(fields: [venueObjectId], references: [id])
+  status        ServerCallStatus @default(PENDING)
+  createdAt     DateTime     @default(now())
+  
+  acknowledgedByUserId String?
+  acknowledgedBy       User?   @relation("AcknowledgedCalls", fields: [acknowledgedByUserId], references: [id])
+  acknowledgedAt       DateTime?
 
-  // Relations
-  visitId   Int
-  visit     Visit   @relation(fields: [visitId], references: [id])
-  // hostId             Int // Removed host
-  // host               Host      @relation(fields: [hostId], references: [id]) // Removed host
-  productId Int
-  product   Product @relation(fields: [productId], references: [id])
-  staffId   Int // Staff member who processed the sale
-  staff     Staff   @relation(fields: [staffId], references: [id])
-
-  stockLedgerEntries StockLedger[]
-  staffCommissions   StaffCommission[] // Staff might get commission on sales
-  // Removed PartnerPayouts relation for MVP
-
-  @@index([visitId])
-  // @@index([hostId]) // Removed host
-  @@index([productId])
-  @@index([staffId])
-  @@index([createdAt])
+  resolvedByUserId String?
+  resolvedBy       User?   @relation("ResolvedCalls", fields: [resolvedByUserId], references: [id])
+  resolvedAt       DateTime?
 }
 
-// StockLedger remains largely the same
-model StockLedger {
-  id             Int               @id @default(autoincrement())
-  movementType   StockMovementType
-  quantityChange Decimal // Change in InventoryItem.smallestUnit
-  notes          String?
-  createdAt      DateTime          @default(now())
-
-  // Relations
-  inventoryItemId Int
-  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id])
-  saleId          Int? // Link to sale if deduction was due to a sale
-  sale            Sale?         @relation(fields: [saleId], references: [id], onDelete: SetNull)
-
-  @@index([inventoryItemId])
-  @@index([saleId])
-  @@index([createdAt])
+enum ServerCallStatus {
+  PENDING
+  ACKNOWLEDGED
+  RESOLVED
 }
-
-// StaffCommission simplified for MVP
-model StaffCommission {
-  id             Int                 @id @default(autoincrement())
-  commissionType StaffCommissionType // e.g., 'sale'
-  amountEarned   Decimal
-  isPaidOut      Boolean             @default(false)
-  notes          String?
-  createdAt      DateTime            @default(now())
-
-  // Relations
-  staffId         Int
-  staff           Staff   @relation(fields: [staffId], references: [id])
-  relatedSaleId   Int? // Link commission to the specific sale
-  relatedSale     Sale?   @relation(fields: [relatedSaleId], references: [id], onDelete: SetNull)
-  relatedClientId Int? // Kept for potential future CAC logic
-  relatedClient   Client? @relation("ClientCommissions", fields: [relatedClientId], references: [id], onDelete: SetNull)
-
-  @@index([staffId])
-  @@index([relatedSaleId])
-  @@index([relatedClientId])
-  @@index([isPaidOut])
-}
-
-// ---
-// SECTION 6: REMOVED / DEFERRED MODELS (For MVP)
-// ---
-// Removed: Host, HostShift, PromotionBulletin, ActiveInteraction, PartnerPayout, SpaceLease, Environment, DisplaySpace

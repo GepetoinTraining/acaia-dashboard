@@ -25,7 +25,10 @@ import { notifications } from "@mantine/notifications";
 import { randomId } from "@mantine/hooks"; // Import randomId from @mantine/hooks
 import { ApiResponse } from "@/lib/types";
 import { ProductWithWorkstation } from "../page";
-import { SerializedIngredient } from "../../inventory/page"; // Import from inventory
+// ---- START FIX 1 ----
+// Correct the import path and alias the type if needed
+import { SerializedIngredientDef as SerializedIngredient } from "../../ingredients/page";
+// ---- END FIX 1 ----
 import { IconTrash } from "@tabler/icons-react";
 import { useQuery, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
@@ -41,7 +44,7 @@ interface RecipeIngredientItem {
   quantity: string;
 }
 // Full recipe type returned from GET /api/recipes
-type FullRecipe = any; 
+type FullRecipe = any;
 
 // Wrapper to provide QueryClient
 export function ManageRecipeModal(props: {
@@ -49,6 +52,9 @@ export function ManageRecipeModal(props: {
   onClose: () => void;
   product: ProductWithWorkstation | null;
 }) {
+  // Check if a QueryClientProvider is already higher up the tree if necessary
+  // For simplicity, wrapping here ensures it has one.
+  // Consider providing the client via context if used in many places.
   return (
     <QueryClientProvider client={new QueryClient()}>
       <RecipeModalContent {...props} />
@@ -81,10 +87,14 @@ function RecipeModalContent({
     validate: {
       ingredients: {
         ingredientId: (value) => (value ? null : "Ingrediente é obrigatório"),
-        quantity: (value) => (parseFloat(value) > 0 ? null : "Qtd. inválida"),
+        // Ensure quantity is validated correctly as a number > 0
+        quantity: (value) => {
+             const num = parseFloat(value);
+             return !isNaN(num) && num > 0 ? null : "Qtd. inválida";
+        },
       },
       steps: {
-        instruction: (value) => (value ? null : "Instrução é obrigatória"),
+        instruction: (value) => (value && value.trim().length > 0 ? null : "Instrução é obrigatória"),
       },
     },
   });
@@ -92,88 +102,104 @@ function RecipeModalContent({
   // Fetch all available ingredients for the dropdown
   useEffect(() => {
     const fetchIngredients = async () => {
-      if (!opened) return;
+      if (!opened) return; // Only fetch if modal is opened
       setIsFetchingIngredients(true);
       try {
-        const response = await fetch("/api/ingredients");
+        const response = await fetch("/api/ingredients"); // Correct API endpoint
         const data: ApiResponse<SerializedIngredient[]> = await response.json();
         if (data.success && data.data) {
           setIngredientsList(data.data);
+        } else {
+           notifications.show({title: "Erro", message: data.error || "Falha ao buscar ingredientes", color: "red"});
         }
       } catch (error) {
         console.error("Failed to fetch ingredients", error);
+        notifications.show({title: "Erro", message: "Falha ao buscar ingredientes.", color: "red"});
       } finally {
         setIsFetchingIngredients(false);
       }
     };
     fetchIngredients();
-  }, [opened]);
+  }, [opened]); // Dependency array includes opened
 
-  // Fetch existing recipe data when modal opens
+  // Fetch existing recipe data when modal opens or product changes
   const {
     data: existingRecipe,
     isLoading: isLoadingRecipe,
     error: recipeError,
-    refetch,
-  } = useQuery<FullRecipe>({
+    // refetch, // refetch might be useful if needed later
+  } = useQuery<FullRecipe | null>({ // Allow null if no recipe exists
     queryKey: ["recipe", product?.id],
     queryFn: async () => {
-      const response = await fetch(`/api/recipes?productId=${product!.id}`);
+       if (!product?.id) return null; // Don't fetch if no product ID
+      const response = await fetch(`/api/recipes?productId=${product.id}`);
+      if (response.status === 404) {
+          return null; // Handle case where no recipe exists yet
+      }
       const data: ApiResponse<FullRecipe> = await response.json();
       if (data.success && data.data) {
         return data.data;
       }
-      if (response.status === 404) {
-        return null; // No recipe found
-      }
       throw new Error(data.error || "Failed to fetch recipe");
     },
-    enabled: !!product && opened,
+    enabled: !!product && opened, // Only run query if product exists and modal is open
+    retry: false, // Don't retry automatically on 404 etc.
   });
 
   // Populate form with existing recipe data
   useEffect(() => {
-    if (existingRecipe) {
-      form.setValues({
-        notes: existingRecipe.notes || "",
-        difficulty: existingRecipe.difficulty || 1,
-        ingredients: existingRecipe.ingredients.map((ing: any) => ({
-          key: randomId(),
-          ingredientId: ing.ingredientId,
-          quantity: ing.quantity,
-        })),
-        steps: existingRecipe.steps.map((step: any) => ({
-          key: randomId(),
-          stepNumber: step.stepNumber,
-          instruction: step.instruction,
-        })),
-      });
-    } else {
-      form.reset(); // Reset if no recipe
+    if (opened && product) { // Only set values when opened and product is available
+        if (existingRecipe) {
+          form.setValues({
+            notes: existingRecipe.notes || "",
+            difficulty: existingRecipe.difficulty || 1,
+            ingredients: existingRecipe.ingredients.map((ing: any) => ({
+              key: randomId(),
+              ingredientId: ing.ingredientId,
+              quantity: ing.quantity.toString(), // Ensure quantity is string for form
+            })),
+            steps: existingRecipe.steps.map((step: any) => ({
+              key: randomId(),
+              stepNumber: step.stepNumber,
+              instruction: step.instruction,
+            })),
+          });
+        } else if (!isLoadingRecipe) { // Only reset if not loading and no recipe found
+          form.reset(); // Reset if no recipe exists for the product
+        }
+    } else if (!opened) {
+        form.reset(); // Reset when modal closes
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [existingRecipe]);
+  }, [existingRecipe, opened, product, isLoadingRecipe]); // Add dependencies
 
   // Handle form submission
   const handleSubmit = async (values: typeof form.values) => {
     if (!product) return;
     setIsSubmitting(true);
-    
-    // Ensure step numbers are correct
+
+    // Ensure step numbers are sequential and correct before sending
     const finalSteps = values.steps.map((step, index) => ({
-        stepNumber: index + 1,
+        stepNumber: index + 1, // Re-assign step numbers based on array order
         instruction: step.instruction,
     }));
 
+    // Ensure ingredient quantities are valid numbers before sending (API expects string/number)
+    const finalIngredients = values.ingredients.map(ing => ({
+        ingredientId: ing.ingredientId,
+        quantity: ing.quantity // API should handle string parsing
+    }));
+
+
     try {
       const response = await fetch("/api/recipes", {
-        method: "POST",
+        method: "POST", // API route handles upsert logic via POST
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           productId: product.id,
           notes: values.notes,
           difficulty: values.difficulty,
-          ingredients: values.ingredients,
+          ingredients: finalIngredients,
           steps: finalSteps,
         }),
       });
@@ -186,7 +212,7 @@ function RecipeModalContent({
           message: "Receita salva com sucesso!",
           color: "green",
         });
-        handleClose();
+        handleClose(); // Close modal on success
       } else {
         notifications.show({
           title: "Erro",
@@ -196,13 +222,14 @@ function RecipeModalContent({
       }
     } catch (error) {
       console.error("Submit error:", error);
+       notifications.show({ title: "Erro", message: "Ocorreu um erro inesperado.", color: "red" });
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const handleClose = () => {
-    form.reset();
+    // form.reset(); // Reset is handled by useEffect on 'opened' change
     onClose();
   };
 
@@ -216,17 +243,19 @@ function RecipeModalContent({
     <Group key={item.key} grow align="flex-start">
       <Select
         label="Ingrediente"
-        placeholder="Selecione..."
+        placeholder={isFetchingIngredients ? "Carregando..." : "Selecione..."}
         data={ingredientOptions}
         {...form.getInputProps(`ingredients.${index}.ingredientId`)}
         searchable
         required
+        disabled={isFetchingIngredients}
       />
       <NumberInput
-        label="Quantidade"
+        label={`Quantidade (${ingredientsList.find(i=>i.id===item.ingredientId)?.unit || 'Unidade'})`}
         placeholder="1.5"
         decimalScale={3}
         min={0.001}
+        step={0.1} // Adjust step as needed
         {...form.getInputProps(`ingredients.${index}.quantity`)}
         required
       />
@@ -234,6 +263,7 @@ function RecipeModalContent({
         color="red"
         onClick={() => form.removeListItem("ingredients", index)}
         mt={25}
+        variant="light"
       >
         <IconTrash size={18} />
       </ActionIcon>
@@ -242,25 +272,28 @@ function RecipeModalContent({
 
   // --- Form Fields for Steps ---
   const stepFields = form.values.steps.map((item, index) => (
-    <Group key={item.key} grow align="flex-start">
+    <Group key={item.key} grow align="flex-start" wrap="nowrap">
       <Text fw={700} mt={30}>{index + 1}.</Text>
       <TextInput
-        label="Instrução"
+        // Remove label as number indicates step
+        // label="Instrução"
         placeholder="Ex: Misture os ingredientes"
         {...form.getInputProps(`steps.${index}.instruction`)}
         required
+        style={{ flexGrow: 1 }}
       />
       <ActionIcon
         color="red"
         onClick={() => form.removeListItem("steps", index)}
-        mt={25}
+        mt={25} // Align with input label visually
+         variant="light"
       >
         <IconTrash size={18} />
       </ActionIcon>
     </Group>
   ));
-  
-  const isLoading = isSubmitting || isFetchingIngredients || isLoadingRecipe;
+
+  const isLoading = isSubmitting || isFetchingIngredients || (isLoadingRecipe && !existingRecipe); // Show loading overlay initially
 
   return (
     <Modal
@@ -275,28 +308,32 @@ function RecipeModalContent({
       ) : (
         <form onSubmit={form.onSubmit(handleSubmit)}>
           <Stack>
-            {recipeError && (
+            {recipeError && !isLoadingRecipe && ( // Show error only if loading finished with error
               <Alert color="red" title="Erro ao carregar receita">
-                {(recipeError as Error).message}. Pode não haver uma receita.
+                {(recipeError as Error).message}. Pode não haver uma receita definida ainda.
               </Alert>
             )}
-            
+
             {/* Ingredients Section */}
             <Title order={4} mt="md">Ingredientes</Title>
             {ingredientFields.length > 0 ? (
               ingredientFields
             ) : (
-              <Text c="dimmed">Nenhum ingrediente adicionado.</Text>
+              <Text c="dimmed" size="sm">Nenhum ingrediente adicionado.</Text>
             )}
             <Button
               variant="outline"
+               // ---- START FIX 2 ----
               onClick={() =>
-                form.addListItem("ingredients", {
+                form.insertListItem("ingredients", { // Correct method
                   key: randomId(),
                   ingredientId: null,
                   quantity: "1",
-                })
+                }, form.values.ingredients.length) // Add index
               }
+               // ---- END FIX 2 ----
+              disabled={isFetchingIngredients}
+              size="xs"
             >
               Adicionar Ingrediente
             </Button>
@@ -306,36 +343,42 @@ function RecipeModalContent({
             {stepFields.length > 0 ? (
               stepFields
             ) : (
-              <Text c="dimmed">Nenhum passo adicionado.</Text>
+              <Text c="dimmed" size="sm">Nenhum passo adicionado.</Text>
             )}
             <Button
               variant="outline"
+              // ---- START FIX 3 ----
               onClick={() =>
-                form.addListItem("steps", {
+                 form.insertListItem("steps", { // Correct method
                   key: randomId(),
-                  stepNumber: form.values.steps.length + 1,
+                  stepNumber: form.values.steps.length + 1, // Temp number, will be reassigned
                   instruction: "",
-                })
+                }, form.values.steps.length) // Add index
               }
+              // ---- END FIX 3 ----
+              size="xs"
             >
               Adicionar Passo
             </Button>
-            
+
             {/* Other Fields */}
             <Title order={4} mt="lg">Detalhes Adicionais</Title>
             <Textarea
               label="Notas (Opcional)"
               placeholder="Ex: Servir com gelo"
               {...form.getInputProps('notes')}
+              minRows={2}
             />
             <NumberInput
-                label="Dificuldade (1-5)"
+                label="Dificuldade (1-5, Opcional)"
                 min={1}
                 max={5}
+                step={1}
+                allowDecimal={false}
                 {...form.getInputProps('difficulty')}
             />
 
-            <Button type="submit" mt="xl" loading={isSubmitting}>
+            <Button type="submit" mt="xl" loading={isSubmitting} disabled={isFetchingIngredients || isLoadingRecipe}>
               Salvar Receita
             </Button>
           </Stack>

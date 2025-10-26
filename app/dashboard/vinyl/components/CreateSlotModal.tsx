@@ -1,6 +1,4 @@
 // PATH: app/dashboard/vinyl/components/CreateSlotModal.tsx
-// NOTE: This is a NEW FILE.
-
 "use client";
 
 import { useState } from "react";
@@ -103,7 +101,7 @@ export function CreateSlotModal({
               required
               label="Coluna"
               placeholder="1"
-              min={1A}
+              min={1} // <-- FIX: Removed the stray 'A'
               allowDecimal={false}
               {...form.getInputProps("column")}
             />

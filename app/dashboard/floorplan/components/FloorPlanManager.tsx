@@ -11,6 +11,7 @@ import {
   Button,
   Group,
   LoadingOverlay,
+  Text, // <--- Added Text import here
 } from "@mantine/core";
 import { IconPlus } from "@tabler/icons-react";
 import {
@@ -139,7 +140,7 @@ export function FloorPlanManager() {
           />
         ) : (
           !isPlanLoading && (
-            <Text>
+            <Text> {/* Now this <Text> refers to the Mantine component */}
               Nenhuma planta selecionada ou a planta não possui objetos.
             </Text>
           )

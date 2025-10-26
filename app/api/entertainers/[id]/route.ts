@@ -17,7 +17,7 @@ type RouteParams = {
 export async function PATCH(req: NextRequest, { params }: RouteParams) {
     const session = await getSession();
     // Stricter role check
-    if (!session.staff?.isLoggedIn || (session.staff.role !== Role.Admin && session.staff.role !== Role.Manager)) {
+    if (!session.user?.isLoggedIn || (session.user.role !== Role.Admin && session.user.role !== Role.Manager)) {
         return NextResponse.json<ApiResponse>(
             { success: false, error: "Não autorizado (Admin/Manager required)" },
             { status: 403 }
@@ -109,7 +109,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
  */
 export async function DELETE(req: NextRequest, { params }: RouteParams) {
     const session = await getSession();
-     if (!session.staff?.isLoggedIn || (session.staff.role !== Role.Admin && session.staff.role !== Role.Manager)) {
+     if (!session.user?.isLoggedIn || (session.user.role !== Role.Admin && session.user.role !== Role.Manager)) {
         return NextResponse.json<ApiResponse>(
             { success: false, error: "Não autorizado (Admin/Manager required)" },
             { status: 403 }

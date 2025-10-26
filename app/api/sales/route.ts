@@ -33,7 +33,7 @@ const defaultCrmData = Prisma.JsonNull;
 export async function POST(req: NextRequest) {
     const session = await getSession();
 
-    if (!session.staff?.isLoggedIn || !session.staff.role) {
+    if (!session.user?.isLoggedIn || !session.user.role) {
         return NextResponse.json<ApiResponse>(
             { success: false, error: "Não autorizado. Faça login." },
             { status: 401 }
@@ -41,10 +41,10 @@ export async function POST(req: NextRequest) {
     }
 
     const isAllowedRole =
-        session.staff.role === Role.Server ||
-        session.staff.role === Role.Bartender ||
-        session.staff.role === Role.Manager ||
-        session.staff.role === Role.Admin;
+        session.user.role === Role.Server ||
+        session.user.role === Role.Bartender ||
+        session.user.role === Role.Manager ||
+        session.user.role === Role.Admin;
 
     if (!isAllowedRole) {
         return NextResponse.json<ApiResponse>(
@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
         );
     }
 
-    const staffId = session.staff.id;
+    const staffId = session.user.id;
 
     try {
         const body: AcaiaSalePayload = await req.json();

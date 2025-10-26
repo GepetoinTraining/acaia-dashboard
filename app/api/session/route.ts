@@ -10,14 +10,14 @@ import { NextRequest, NextResponse } from "next/server";
 export async function GET(req: NextRequest) {
     const session = await getSession();
 
-    if (session.staff?.isLoggedIn) {
+    if (session.user?.isLoggedIn) {
         // Return only necessary, non-sensitive data
         const sessionData: StaffSession = {
-            id: session.staff.id,
-            name: session.staff.name,
-            role: session.staff.role,
+            id: session.user.id,
+            name: session.user.name,
+            role: session.user.role,
             isLoggedIn: true,
-            shiftId: session.staff.shiftId,
+            shiftId: session.user.shiftId,
             // Exclude PIN even if it exists in the session store
         };
          return NextResponse.json<ApiResponse<StaffSession>>(

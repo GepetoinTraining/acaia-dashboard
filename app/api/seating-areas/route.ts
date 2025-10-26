@@ -18,7 +18,7 @@ function generateUniqueToken(length = 10) {
  */
 export async function GET(req: NextRequest) {
   const session = await getSession();
-  if (!session.staff?.isLoggedIn) {
+  if (!session.user?.isLoggedIn) {
     return NextResponse.json<ApiResponse>(
       { success: false, error: "Não autorizado" },
       { status: 401 }
@@ -77,7 +77,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
     const session = await getSession();
     // Stricter role check
-    if (!session.staff?.isLoggedIn || (session.staff.role !== Role.Admin && session.staff.role !== Role.Manager)) {
+    if (!session.user?.isLoggedIn || (session.user.role !== Role.Admin && session.user.role !== Role.Manager)) {
         return NextResponse.json<ApiResponse>(
             { success: false, error: "Não autorizado (Admin/Manager required)" },
             { status: 403 }

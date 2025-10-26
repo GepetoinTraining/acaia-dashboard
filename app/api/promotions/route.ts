@@ -15,7 +15,7 @@ import { NextRequest, NextResponse } from "next/server";
  * /
 export async function GET(req: NextRequest) {
   const session = await getSession();
-  if (!session.staff?.isLoggedIn) {
+  if (!session.user?.isLoggedIn) {
     return NextResponse.json<ApiResponse>(
       { success: false, error: "Não autorizado" },
       { status: 401 }
@@ -55,7 +55,7 @@ export async function GET(req: NextRequest) {
  * /
 export async function POST(req: NextRequest) {
   const session = await getSession();
-  if (!session.staff?.isLoggedIn) {
+  if (!session.user?.isLoggedIn) {
     return NextResponse.json<ApiResponse>(
       { success: false, error: "Não autorizado" },
       { status: 401 }

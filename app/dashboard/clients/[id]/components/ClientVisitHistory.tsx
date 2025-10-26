@@ -11,21 +11,22 @@ import {
   Group,
   Table,
 } from "@mantine/core";
-// --- FIX: Import the correct type alias ---
-import { VisitWithSalesAndArea } from "@/lib/types"; // Corrected import path
-import { Calendar, ShoppingBag, User, DollarSign } from "lucide-react";
+// Import the correctly named and structured type
+import { VisitWithOrdersAndVenueObject } from "@/lib/types"; // Corrected import name
+import { Calendar } from "lucide-react";
 import dayjs from "dayjs";
-import { formatCurrency } from "@/lib/utils"; // Import formatCurrency
+import { formatCurrency } from "@/lib/utils";
+import React from "react"; // Needed for ReactNode
 
 type ClientVisitHistoryProps = {
-  // --- FIX: Use the correct type alias ---
-  visits: VisitWithSalesAndArea[];
+  // Use the updated type
+  visits: VisitWithOrdersAndVenueObject[];
 };
 
 export function ClientVisitHistory({ visits }: ClientVisitHistoryProps) {
-  if (!visits || visits.length === 0) { // Added null check for safety
+  if (!visits || visits.length === 0) {
     return (
-      <Paper withBorder p="md" radius="md" mt="md"> {/* Added margin top */}
+      <Paper withBorder p="md" radius="md" mt="md">
         <Title order={4}>Histórico de Visitas</Title>
         <Text c="dimmed" mt="md">
           Este cliente ainda não tem visitas registradas.
@@ -35,60 +36,58 @@ export function ClientVisitHistory({ visits }: ClientVisitHistoryProps) {
   }
 
   const items = visits.map((visit) => {
-    // Calculate visit total using the correct structure and Number()
-    const visitTotal = visit.sales.reduce(
-      (acc, sale) => acc + (Number(sale.totalAmount) || 0), // Use totalAmount, ensure number
-      0
+    // visit.totalSpent is already a string, parse it
+    const visitTotal = parseFloat(visit.totalSpent) || 0;
+
+    // Flatten order items for display
+    const orderItemsRows = visit.orders.flatMap((order) =>
+        order.items.map((item): React.ReactNode => ( // Explicitly type the row as ReactNode
+         <Table.Tr key={`${order.id}-${item.productId}-${item.id}`}> {/* More specific key */}
+            <Table.Td>
+              {dayjs(order.createdAt).format("HH:mm")}
+            </Table.Td>
+            <Table.Td>{item.product?.name || "Produto Deletado"}</Table.Td>
+            <Table.Td>{item.quantity}</Table.Td> {/* Quantity should be number or string */}
+            {/* unitPrice and totalPrice are strings, parse before formatting */}
+            <Table.Td>{formatCurrency(parseFloat(item.unitPrice) || 0)}</Table.Td>
+            <Table.Td>{formatCurrency(parseFloat(item.totalPrice) || 0)}</Table.Td>
+            {/* Safely access handler name */}
+            <Table.Td>{order.handledBy?.[0]?.user?.name ?? "N/A"}</Table.Td>
+          </Table.Tr>
+        ))
     );
 
-    const salesRows = visit.sales.map((sale) => (
-      <Table.Tr key={sale.id}>
-        <Table.Td>
-          {dayjs(sale.createdAt).format("HH:mm")}
-        </Table.Td>
-        <Table.Td>{sale.product?.name || "Produto Deletado"}</Table.Td>
-        <Table.Td>{sale.quantity}</Table.Td>
-        {/* Use formatCurrency for price */}
-        <Table.Td>{formatCurrency(Number(sale.priceAtSale) || 0)}</Table.Td>
-        {/* Use totalAmount */}
-        <Table.Td>{formatCurrency(Number(sale.totalAmount) || 0)}</Table.Td>
-        {/* Display staff name */}
-        <Table.Td>{sale.staff?.name || "N/A"}</Table.Td>
-      </Table.Tr>
-    ));
 
     return (
-      <Accordion.Item key={visit.id} value={visit.id.toString()}>
+      <Accordion.Item key={visit.id} value={visit.id}> {/* Use string ID for value */}
         <Accordion.Control>
           <Group justify="space-between">
              <Group>
-                <ThemeIcon color="pastelGreen" variant="light"> {/* Use theme color */}
+                <ThemeIcon color="teal" variant="light">
                   <Calendar size={16} />
                 </ThemeIcon>
                 <Stack gap={0}>
                   <Text fw={500}>
-                    {dayjs(visit.entryTime).format("DD/MM/YYYY [às] HH:mm")}
-                    {visit.exitTime ? ` - ${dayjs(visit.exitTime).format("HH:mm")}` : ' (Ativa)'}
+                    {dayjs(visit.checkInAt).format("DD/MM/YYYY [às] HH:mm")}
+                    {visit.checkOutAt ? ` - ${dayjs(visit.checkOutAt).format("HH:mm")}` : ' (Ativa)'}
                   </Text>
                   <Text size="sm" c="dimmed">
-                     {/* Display formatted total and sale count */}
-                    Total Gasto: {formatCurrency(visitTotal)} • {visit.sales.length}{" "}
-                    item(s)
+                    Total Gasto: {formatCurrency(visitTotal)} • {visit.orders.length}{" "}
+                    pedido(s)
                   </Text>
-                   {/* Display Seating Area */}
-                   {visit.seatingArea && (
+                   {/* Access venueObject correctly */}
+                   {visit.venueObject && (
                        <Text size="xs" c="dimmed">
-                           Mesa/Área: {visit.seatingArea.name}
+                           Local: {visit.venueObject.name}
                        </Text>
                    )}
                 </Stack>
              </Group>
-             {/* Optionally show total directly on control */}
               <Text fw={500} mr="md">{formatCurrency(visitTotal)}</Text>
           </Group>
         </Accordion.Control>
         <Accordion.Panel>
-           {salesRows.length > 0 ? (
+           {orderItemsRows.length > 0 ? (
                <Table.ScrollContainer minWidth={600}>
                  <Table striped withTableBorder>
                    <Table.Thead>
@@ -98,14 +97,14 @@ export function ClientVisitHistory({ visits }: ClientVisitHistoryProps) {
                        <Table.Th>Qtd.</Table.Th>
                        <Table.Th>Preço Unit.</Table.Th>
                        <Table.Th>Total Item</Table.Th>
-                       <Table.Th>Staff</Table.Th> {/* Changed from Hostess */}
+                       <Table.Th>Staff</Table.Th>
                      </Table.Tr>
                    </Table.Thead>
-                   <Table.Tbody>{salesRows}</Table.Tbody>
+                   <Table.Tbody>{orderItemsRows}</Table.Tbody>
                  </Table>
                </Table.ScrollContainer>
            ) : (
-                <Text size="sm" c="dimmed" ta="center" my="sm">Nenhuma compra registrada nesta visita.</Text>
+                <Text size="sm" c="dimmed" ta="center" my="sm">Nenhum item comprado nesta visita.</Text>
            )}
         </Accordion.Panel>
       </Accordion.Item>
@@ -113,7 +112,7 @@ export function ClientVisitHistory({ visits }: ClientVisitHistoryProps) {
   });
 
   return (
-    <Paper withBorder p="md" radius="md" mt="md"> {/* Added margin top */}
+    <Paper withBorder p="md" radius="md" mt="md">
       <Title order={4}>Histórico de Visitas ({visits.length})</Title>
       <Accordion chevronPosition="left" variant="contained" mt="md">
         {items}

@@ -211,7 +211,9 @@ export function ExecutePrepTaskModal({
                 data={locationOptions}
                 {...form.getInputProps("locationId")}
                 searchable
-                withinPortal
+                // ---- START FIX ----
+                // withinPortal // Removed this line
+                // ---- END FIX ----
             />
           </Group>
 

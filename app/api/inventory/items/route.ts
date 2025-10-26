@@ -1,76 +1,64 @@
 // File: app/api/inventory/items/route.ts
-import { prisma } from "@/lib/prisma";
-import { getSession } from "@/lib/auth";
-import { ApiResponse } from "@/lib/types";
-import { NextRequest, NextResponse } from "next/server";
-// --- FIX: Import UnitOfMeasure instead of SmallestUnit ---
-import { InventoryItem, UnitOfMeasure, Prisma } from "@prisma/client";
+import { prisma } from "@/lib/prisma"; //
+import { getSession } from "@/lib/auth"; //
+import { ApiResponse } from "@/lib/types"; //
+import { NextRequest, NextResponse } from "next/server"; //
+// --- FIX: Use Ingredient model from Prisma schema ---
+import { Ingredient, Prisma } from "@prisma/client"; //
 
-// Define a type for the data structure returned by the 'select' query
-type SelectedInventoryItem = {
-  id: number;
-  name: string;
-  storageUnitName: string | null;
-  // --- FIX: Use UnitOfMeasure ---
-  smallestUnit: UnitOfMeasure;
-  storageUnitSizeInSmallest: Prisma.Decimal | null;
-  reorderThresholdInSmallest: Prisma.Decimal | null;
-};
+// Define the type for the data structure returned (matches Ingredient model)
+// Note: Prisma.Decimal fields will be serialized later
+type SelectedIngredient = Ingredient; // Using the Prisma type directly initially
 
-// Define the final serialized type
-type SerializedInventoryItem = Omit<SelectedInventoryItem, 'storageUnitSizeInSmallest' | 'reorderThresholdInSmallest'> & {
-  storageUnitSizeInSmallest: number | null;
-  reorderThresholdInSmallest: number | null;
-};
+// Define the final serialized type expected by the client
+type SerializedIngredient = Omit<Ingredient, 'stock' | 'costPerUnit'> & { // Renamed, Omit Decimal fields
+  stock: string; // Serialized Decimal field
+  costPerUnit: string; // Serialized Decimal field
+}; //
 
 
 /**
- * GET /api/inventory/items
- * Fetches all defined InventoryItem records.
+ * GET /api/inventory/items -> Should match API call in frontend (/api/ingredients ?)
+ * Fetches all defined Ingredient records.
  */
-export async function GET(req: NextRequest) {
-  const session = await getSession();
-  if (!session.user?.isLoggedIn) {
-    return NextResponse.json<ApiResponse>(
-      { success: false, error: "Não autorizado" },
-      { status: 401 }
-    );
-  }
+export async function GET(req: NextRequest) { //
+  // Auth check - Assuming SessionData has `user` property now
+  const session = await getSession(); //
+  if (!session.user?.isLoggedIn) { // Corrected check //
+    return NextResponse.json<ApiResponse>( //
+      { success: false, error: "Não autorizado" }, //
+      { status: 401 } //
+    ); //
+  } //
 
-  try {
-    const items: SelectedInventoryItem[] = await prisma.inventoryItem.findMany({
-      select: {
-        id: true,
-        name: true,
-        storageUnitName: true,
-        smallestUnit: true, // This field uses UnitOfMeasure enum
-        storageUnitSizeInSmallest: true,
-        reorderThresholdInSmallest: true,
-      },
-      orderBy: { name: "asc" },
-    });
+  try { //
+    // --- FIX: Query the Ingredient model ---
+    const items: SelectedIngredient[] = await prisma.ingredient.findMany({ //
+      // No need for 'select' if fetching all standard Ingredient fields
+      orderBy: { name: "asc" }, //
+    }); //
 
-    // Convert Prisma Decimal fields to numbers
-    const serializedItems: SerializedInventoryItem[] = items.map(item => ({
-       id: item.id,
-       name: item.name,
-       storageUnitName: item.storageUnitName,
-       smallestUnit: item.smallestUnit, // Field name remains smallestUnit
-       // Overwrite the Decimal fields with their number equivalents
-      storageUnitSizeInSmallest: item.storageUnitSizeInSmallest ? Number(item.storageUnitSizeInSmallest) : null,
-      reorderThresholdInSmallest: item.reorderThresholdInSmallest ? Number(item.reorderThresholdInSmallest) : null,
-    }));
+    // --- FIX: Serialize Decimal fields to strings ---
+    const serializedItems: SerializedIngredient[] = items.map(item => ({ //
+       id: item.id, //
+       name: item.name, //
+       unit: item.unit, // Correct field name //
+       // Serialize Prisma Decimal fields
+      stock: item.stock.toString(), //
+      costPerUnit: item.costPerUnit.toString(), //
+      // Removed fields not present in Ingredient model
+    })); //
 
 
-    return NextResponse.json<ApiResponse<SerializedInventoryItem[]>>(
-      { success: true, data: serializedItems },
-      { status: 200 }
-    );
-  } catch (error) {
-    console.error("GET /api/inventory/items error:", error);
-    return NextResponse.json<ApiResponse>(
-      { success: false, error: "Erro ao buscar itens de inventário" },
-      { status: 500 }
-    );
-  }
-}
+    return NextResponse.json<ApiResponse<SerializedIngredient[]>>( // Use correct serialized type //
+      { success: true, data: serializedItems }, //
+      { status: 200 } //
+    ); //
+  } catch (error) { //
+    console.error("GET /api/inventory/items error:", error); // Updated path //
+    return NextResponse.json<ApiResponse>( //
+      { success: false, error: "Erro ao buscar itens de inventário" }, // Updated message //
+      { status: 500 } //
+    ); //
+  } //
+} //

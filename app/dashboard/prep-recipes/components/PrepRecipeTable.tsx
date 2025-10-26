@@ -12,7 +12,7 @@ import {
   Stack,
   Button // Added Button
 } from "@mantine/core";
-import { IconPencil, IconTrash, IconInputAi, IconOutput, IconPlayerPlay } from "@tabler/icons-react"; // Added IconPlayerPlay
+import { IconPencil, IconTrash, IconInputAi, IconOutlet, IconPlayerPlay } from "@tabler/icons-react"; // Added IconPlayerPlay
 import { SerializedPrepRecipe, ApiResponse } from "@/lib/types";
 import { notifications } from '@mantine/notifications';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -105,7 +105,7 @@ export function PrepRecipeTable({
         </Table.Td>
         <Table.Td>
              <Group gap={4} wrap="nowrap">
-                <IconOutput size={14} opacity={0.7}/>
+                <IconOutlet size={14} opacity={0.7}/>
                  <Text size="sm" fw={500}>
                       {parseFloat(recipe.outputQuantity).toLocaleString('pt-BR', { maximumFractionDigits: 3 })} {recipe.outputIngredient.unit}
                  </Text>

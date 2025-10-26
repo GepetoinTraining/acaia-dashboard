@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect } from "react";
@@ -14,13 +13,14 @@ import {
   Textarea, // Added for notes
   Group,
   List,
-  ThemeIcon
+  ThemeIcon,
+  Alert, // Added Alert
 } from "@mantine/core";
 import { IconCircleCheck, IconCircleX, IconExclamationCircle } from "@tabler/icons-react"; // Added icons
 import { useForm } from "@mantine/form";
 import { ApiResponse, SerializedPrepRecipe, SerializedStockHolding } from "@/lib/types";
 import { notifications } from "@mantine/notifications";
-import { Decimal } from "@prisma/client/runtime/library"; // Use for calculations
+// REMOVED: import { Decimal } from "@prisma/client/runtime/library";
 import { useQuery } from "@tanstack/react-query";
 
 type StockLocation = { id: string; name: string };
@@ -34,18 +34,22 @@ interface ExecutePrepTaskModalProps {
 }
 
 // Helper to fetch current stock for required ingredients at a location
-const fetchInputStock = async (ingredientIds: string[], locationId: string): Promise<Map<string, Decimal>> => {
+// API returns quantities as strings, so Map value is string
+const fetchInputStock = async (ingredientIds: string[], locationId: string): Promise<Map<string, string>> => {
     const params = new URLSearchParams({ venueObjectId: locationId });
-    ingredientIds.forEach(id => params.append('ingredientId', id)); // Filter by multiple ingredient IDs if API supports, otherwise fetch all for location
+    ingredientIds.forEach(id => params.append('ingredientId', id));
 
     const res = await fetch(`/api/stock-holdings?${params.toString()}`);
     const result: ApiResponse<SerializedStockHolding[]> = await res.json();
     if (!res.ok || !result.success) throw new Error(result.error || "Falha ao buscar estoque atual");
 
-    const stockMap = new Map<string, Decimal>();
+    // Aggregate quantities as strings
+    const stockMap = new Map<string, string>();
     result.data?.forEach(holding => {
-        const current = stockMap.get(holding.ingredientId) ?? new Decimal(0);
-        stockMap.set(holding.ingredientId, current.plus(holding.quantity));
+        const current = parseFloat(stockMap.get(holding.ingredientId) ?? "0");
+        const holdingQty = parseFloat(holding.quantity); // Parse holding quantity string
+        // Store the sum back as a string
+        stockMap.set(holding.ingredientId, (current + holdingQty).toString());
     });
     return stockMap;
 };
@@ -59,7 +63,8 @@ export function ExecutePrepTaskModal({
   locations,
 }: ExecutePrepTaskModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [calculatedInputs, setCalculatedInputs] = useState<{ ingredient: { name: string; unit: string; id: string }, required: Decimal }[]>([]);
+  // Store required quantities as numbers now
+  const [calculatedInputs, setCalculatedInputs] = useState<{ ingredient: { name: string; unit: string; id: string }, required: number }[]>([]);
 
   const form = useForm({
     initialValues: {
@@ -69,12 +74,10 @@ export function ExecutePrepTaskModal({
     },
     validate: {
       quantityRun: (value) => {
-          try {
-              const num = new Decimal(value);
-              return num.gt(0) ? null : "Quantidade deve ser positiva";
-          } catch {
-              return "Quantidade inválida";
-          }
+          // Use parseFloat for validation
+          const num = parseFloat(value);
+          if (isNaN(num)) return "Quantidade inválida";
+          return num > 0 ? null : "Quantidade deve ser positiva";
       },
       locationId: (val) => (val ? null : "Localização é obrigatória"),
     },
@@ -83,16 +86,16 @@ export function ExecutePrepTaskModal({
   const selectedLocationId = form.values.locationId;
   const quantityRunValue = form.values.quantityRun;
 
-  // Fetch current stock for required inputs when location or recipe changes
+  // Fetch current stock (Map<string, string>)
   const { data: currentInputStock, isLoading: isLoadingStock } = useQuery({
       queryKey: ['inputStock', prepRecipe?.id, selectedLocationId],
       queryFn: () => {
-          if (!prepRecipe || !selectedLocationId) return new Map<string, Decimal>();
+          if (!prepRecipe || !selectedLocationId) return new Map<string, string>();
           const inputIds = prepRecipe.inputs.map(inp => inp.ingredient.id);
           return fetchInputStock(inputIds, selectedLocationId);
       },
-      enabled: !!prepRecipe && !!selectedLocationId && opened, // Only run when modal is open and deps are ready
-      placeholderData: new Map<string, Decimal>(), // Provide initial empty map
+      enabled: !!prepRecipe && !!selectedLocationId && opened,
+      placeholderData: new Map<string, string>(),
   });
 
 
@@ -100,16 +103,18 @@ export function ExecutePrepTaskModal({
   useEffect(() => {
     if (prepRecipe && quantityRunValue) {
       try {
-        const quantityRunDecimal = new Decimal(quantityRunValue);
-        const outputQuantityDecimal = new Decimal(prepRecipe.outputQuantity);
+        // Use parseFloat for calculations
+        const quantityRunNum = parseFloat(quantityRunValue);
+        const outputQuantityNum = parseFloat(prepRecipe.outputQuantity);
 
-        if (quantityRunDecimal.gt(0) && outputQuantityDecimal.gt(0)) {
-          const runs = quantityRunDecimal.dividedBy(outputQuantityDecimal);
+        if (!isNaN(quantityRunNum) && !isNaN(outputQuantityNum) && quantityRunNum > 0 && outputQuantityNum > 0) {
+          const runs = quantityRunNum / outputQuantityNum;
           const required = prepRecipe.inputs.map(input => {
-             const inputQuantityDecimal = new Decimal(input.quantity);
+             const inputQuantityNum = parseFloat(input.quantity);
              return {
                 ingredient: input.ingredient,
-                required: inputQuantityDecimal.times(runs),
+                // Store required as number
+                required: inputQuantityNum * runs,
              };
           });
           setCalculatedInputs(required);
@@ -168,10 +173,12 @@ export function ExecutePrepTaskModal({
 
   const locationOptions = locations.map(l => ({ label: l.name, value: l.id }));
 
-  // Check if there is enough stock for each required input
+  // Check if there is enough stock for each required input (using numbers)
   const stockCheckResults = calculatedInputs.map(input => {
-      const available = currentInputStock?.get(input.ingredient.id) ?? new Decimal(0);
-      const sufficient = available.gte(input.required);
+      // Parse the string from the map
+      const availableString = currentInputStock?.get(input.ingredient.id) ?? "0";
+      const available = parseFloat(availableString);
+      const sufficient = available >= input.required; // Direct number comparison
       return { ...input, available, sufficient };
   });
   const hasInsufficientStock = selectedLocationId && !isLoadingStock && stockCheckResults.some(res => !res.sufficient);
@@ -218,8 +225,9 @@ export function ExecutePrepTaskModal({
                  )}
                  <List spacing="xs" size="sm" center>
                     {stockCheckResults.map(input => {
-                        const availableFormatted = input.available.toFixed(3, Decimal.ROUND_DOWN);
-                        const requiredFormatted = input.required.toFixed(3, Decimal.ROUND_UP); // Round up required amount for display
+                        // Use standard number toFixed
+                        const availableFormatted = input.available.toFixed(3);
+                        const requiredFormatted = input.required.toFixed(3);
                         return (
                              <List.Item
                                 key={input.ingredient.id}

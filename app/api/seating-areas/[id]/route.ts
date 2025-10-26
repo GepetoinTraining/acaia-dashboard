@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { ApiResponse } from "@/lib/types";
 import { NextRequest, NextResponse } from "next/server";
-import { SeatingArea, SeatingAreaType, Prisma, StaffRole } from "@prisma/client"; // Added StaffRole
+import { SeatingArea, SeatingAreaType, Prisma, Role } from "@prisma/client"; // Added Role
 
 type RouteParams = {
   params: { id: string };
@@ -17,7 +17,7 @@ type RouteParams = {
 export async function PATCH(req: NextRequest, { params }: RouteParams) {
     const session = await getSession();
     // Stricter role check
-     if (!session.staff?.isLoggedIn || (session.staff.role !== StaffRole.Admin && session.staff.role !== StaffRole.Manager)) {
+     if (!session.staff?.isLoggedIn || (session.staff.role !== Role.Admin && session.staff.role !== Role.Manager)) {
         return NextResponse.json<ApiResponse>(
             { success: false, error: "Não autorizado (Admin/Manager required)" },
             { status: 403 }
@@ -125,7 +125,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
  */
 export async function DELETE(req: NextRequest, { params }: RouteParams) {
     const session = await getSession();
-     if (!session.staff?.isLoggedIn || (session.staff.role !== StaffRole.Admin && session.staff.role !== StaffRole.Manager)) {
+     if (!session.staff?.isLoggedIn || (session.staff.role !== Role.Admin && session.staff.role !== Role.Manager)) {
         return NextResponse.json<ApiResponse>(
             { success: false, error: "Não autorizado (Admin/Manager required)" },
             { status: 403 }

@@ -4,7 +4,7 @@ import { getSession } from "@/lib/auth";
 import { ApiResponse } from "@/lib/types";
 import { NextRequest, NextResponse } from "next/server";
 // --- FIX: Removed BatchPayload from direct import ---
-import { Prisma, Sale, StaffRole, ClientStatus, Visit, Client, SeatingArea, StockMovementType, Product, InventoryItem } from "@prisma/client";
+import { Prisma, Sale, Role, ClientStatus, Visit, Client, SeatingArea, StockMovementType, Product, InventoryItem } from "@prisma/client";
 
 // Define expected payload shape directly
 interface AcaiaSalePayload {
@@ -41,10 +41,10 @@ export async function POST(req: NextRequest) {
     }
 
     const isAllowedRole =
-        session.staff.role === StaffRole.Server ||
-        session.staff.role === StaffRole.Bartender ||
-        session.staff.role === StaffRole.Manager ||
-        session.staff.role === StaffRole.Admin;
+        session.staff.role === Role.Server ||
+        session.staff.role === Role.Bartender ||
+        session.staff.role === Role.Manager ||
+        session.staff.role === Role.Admin;
 
     if (!isAllowedRole) {
         return NextResponse.json<ApiResponse>(

@@ -51,7 +51,10 @@ export function ActiveVisits({ visits }: ActiveVisitsProps) {
                   </Badge>
                   <Text size="lg" fw={700}>
                     {/* Price is a string, parse before formatting */}
-                    {formatCurrency(parseFloat(visit.totalSpent))}
+                    {/* ---- START FIX ---- */}
+                    {/* Cast to unknown first, then to string */}
+                    {formatCurrency(parseFloat(visit.totalSpent as unknown as string))}
+                    {/* ---- END FIX ---- */}
                   </Text>
                 </Stack>
               </Group>

@@ -10,6 +10,7 @@ import {
   Breadcrumbs,
   Anchor,
   Box,
+  Text // Added Text here
 } from "@mantine/core";
 import { PageHeader } from "../../components/PageHeader";
 import { IconAlertCircle, IconChevronRight } from "@tabler/icons-react";
@@ -78,7 +79,7 @@ function ClientDetailPage() {
       <Anchor component={Link} href="/dashboard/clients">
         Clientes
       </Anchor>
-      <Text>{isLoading ? "Carregando..." : client?.name || "Detalhes"}</Text>
+      <Text>{isLoading ? "Carregando..." : client?.name || "Detalhes"}</Text> {/* This Text component will now work */}
     </Breadcrumbs>
   );
 

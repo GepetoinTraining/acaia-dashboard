@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { ApiResponse } from "@/lib/types";
 import { NextRequest, NextResponse } from "next/server";
-import { Entertainer, Prisma, Role } from "@prisma/client"; // Added Role
+import { Entertainer, Prisma, Role, EntertainerType } from "@prisma/client"; // Added Role
 
 type RouteParams = {
     params: { id: string };
@@ -52,8 +52,12 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
             else updateData.name = name.trim();
         }
         if (type !== undefined) {
-             if (type.trim().length < 1) inputError = "Tipo não pode ser vazio.";
-             else updateData.type = type.trim();
+                // Validate against the imported EntertainerType enum
+            if (!Object.values(EntertainerType).includes(type)) {
+                inputError = "Tipo de artista inválido.";
+            } else {
+                updateData.type = type; // Assign the validated enum value directly
+            }
         }
         if (contactNotes !== undefined) {
              updateData.contactNotes = contactNotes || null;

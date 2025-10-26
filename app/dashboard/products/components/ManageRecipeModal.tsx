@@ -20,8 +20,9 @@ import {
   Loader,
   Alert,
 } from "@mantine/core";
-import { useForm, randomId } from "@mantine/form";
+import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
+import { randomId } from "@mantine/hooks"; // Import randomId from @mantine/hooks
 import { ApiResponse } from "@/lib/types";
 import { ProductWithWorkstation } from "../page";
 import { SerializedIngredient } from "../../inventory/page"; // Import from inventory

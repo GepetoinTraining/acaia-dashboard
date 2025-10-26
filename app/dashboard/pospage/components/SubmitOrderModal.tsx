@@ -1,93 +1,97 @@
-// File: app/dashboard/pospage/components/SubmitOrderModal.tsx
+// PATH: app/dashboard/pospage/components/SubmitOrderModal.tsx
 "use client";
 
 import {
   Modal,
   Button,
   Stack,
-  LoadingOverlay,
-  Text,
   Group,
-  Divider,
-  ScrollArea,
-  Table
+  Text,
+  Title,
+  Box,
+  Paper,
+  LoadingOverlay,
 } from "@mantine/core";
-import { useState } from "react";
-import { CartItem } from "@/lib/types"; // Adjust path if needed
-import { formatCurrency } from "@/lib/utils"; // Adjust path if needed
+import { CartItem } from "./Cart";
+import { formatCurrency } from "@/lib/utils";
+import { ActiveVisitResponse } from "@/app/api/visits/active/route"; // Import type
 
-type SubmitOrderModalProps = {
+interface SubmitOrderModalProps {
   opened: boolean;
   onClose: () => void;
-  onSubmit: () => Promise<void>; // Function to call when submitting
-  seatingAreaName: string;
-  clientName: string;
+  onSubmit: () => void;
   cart: CartItem[];
-  total: number;
-  loading: boolean; // Loading state passed from parent
-};
+  isSubmitting: boolean;
+  visit: ActiveVisitResponse | null; // Pass the selected visit
+}
 
 export function SubmitOrderModal({
   opened,
   onClose,
   onSubmit,
-  seatingAreaName,
-  clientName,
   cart,
-  total,
-  loading,
+  isSubmitting,
+  visit, // Receive the visit
 }: SubmitOrderModalProps) {
-
-  const cartRows = cart.map((item) => (
-    <Table.Tr key={item.product.id}>
-      <Table.Td>{item.quantity}x</Table.Td>
-      <Table.Td>{item.product.name}</Table.Td>
-      <Table.Td ta="right">{formatCurrency(Number(item.product.salePrice) * item.quantity)}</Table.Td>
-    </Table.Tr>
-  ));
+  const total = cart.reduce(
+    (acc, item) =>
+      acc + parseFloat(item.product.price) * item.quantity,
+    0
+  );
 
   return (
     <Modal
       opened={opened}
       onClose={onClose}
-      title={`Confirmar Pedido para ${seatingAreaName}`}
-      centered
+      title="Confirmar Pedido"
       size="md"
     >
-      <LoadingOverlay visible={loading} />
-      <Stack gap="sm">
-        <Text>
-          Mesa/Área: <Text component="span" fw={700}>{seatingAreaName}</Text>
-        </Text>
-        <Text size="sm">
-          Cliente: <Text component="span" fw={700}>{clientName}</Text>
-        </Text>
+      <Box pos="relative">
+        <LoadingOverlay visible={isSubmitting} />
+        <Stack>
+          {visit ? (
+            <Paper p="sm" withBorder>
+              <Text size="sm">Cliente:</Text>
+              <Title order={4}>{visit.client.name}</Title>
+              <Text size="sm">Tab: {visit.tab.rfid}</Text>
+            </Paper>
+          ) : (
+            <Text c="red" fw={700}>
+              ERRO: Nenhuma visita selecionada.
+            </Text>
+          )}
 
-        <Divider my="sm" label="Itens do Pedido" />
-
-        <ScrollArea h={200}>
-            <Table>
-                <Table.Tbody>{cartRows}</Table.Tbody>
-            </Table>
-        </ScrollArea>
-
-        <Divider my="xs" />
-
-        <Group justify="space-between">
-          <Text size="lg" fw={700}>Total do Pedido:</Text>
-          <Text size="lg" fw={700}> {formatCurrency(total)}</Text>
-        </Group>
-
-        <Button
-          mt="md"
-          color="green" // Or pastelGreen
-          size="lg"
-          loading={loading}
-          onClick={onSubmit} // Call the passed onSubmit function
-        >
-          Enviar Pedido para Preparo
-        </Button>
-      </Stack>
+          <Title order={5} mt="md">
+            Itens do Pedido:
+          </Title>
+          <Stack gap="xs">
+            {cart.map((item) => (
+              <Group justify="space-between" key={item.product.id}>
+                <Text>
+                  {item.quantity}x {item.product.name}
+                </Text>
+                <Text>
+                  {formatCurrency(
+                    parseFloat(item.product.price) * item.quantity
+                  )}
+                </Text>
+              </Group>
+            ))}
+          </Stack>
+          <Group justify="space-between" mt="md">
+            <Title order={3}>Total</Title>
+            <Title order={3}>{formatCurrency(total)}</Title>
+          </Group>
+          <Button
+            size="lg"
+            color="green"
+            onClick={onSubmit}
+            disabled={isSubmitting || !visit}
+          >
+            Confirmar e Enviar Pedido
+          </Button>
+        </Stack>
+      </Box>
     </Modal>
   );
 }

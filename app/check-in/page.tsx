@@ -1,127 +1,161 @@
-// File: app/check-in/page.tsx
-"use client"; // This page handles user interaction (button click)
+// PATH: app/check-in/page.tsx
+"use client";
 
-import { Container, Paper, Title, Text, Button, Stack, LoadingOverlay, TextInput } from "@mantine/core";
 import { useState } from "react";
-import { useRouter } from "next/navigation"; // Use App Router's navigation
+import {
+  Container,
+  Paper,
+  TextInput,
+  Button,
+  Title,
+  Stack,
+  LoadingOverlay,
+  Text,
+  Group,
+  Anchor,
+  Box,
+} from "@mantine/core";
+import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
-import { ApiResponse } from "@/lib/types"; // Adjust path if needed
+import { ApiResponse } from "@/lib/types";
+import { IconCheck, IconArrowLeft } from "@tabler/icons-react";
+import Link from "next/link";
+import { Client, Visit, Tab } from "@prisma/client"; // Import new types
+
+// This type is the expected response from the API
+type CheckInResponse = {
+  client: Client;
+  visit: Visit;
+  tab: Tab;
+};
 
 export default function CheckInPage() {
-    const [name, setName] = useState('');
-    const [phoneNumber, setPhoneNumber] = useState('');
-    const [loading, setLoading] = useState(false);
-    const [checkedIn, setCheckedIn] = useState(false); // State to show confirmation
-    const [welcomeName, setWelcomeName] = useState<string | null>(null);
-    const router = useRouter(); // Use App Router hook
+  const [isLoading, setIsLoading] = useState(false);
+  const [successData, setSuccessData] = useState<CheckInResponse | null>(null);
 
-    // --- Configuration (Move to ENV or fetch later) ---
-    const entryFee = 50.00; // Hardcoded entry fee for MVP
-    // ---
+  const form = useForm({
+    initialValues: {
+      phone: "",
+      name: "",
+      rfid: "",
+    },
+    validate: {
+      phone: (value) =>
+        /^\d{10,11}$/.test(value)
+          ? null
+          : "Telefone inválido (deve ter 10-11 dígitos)",
+      rfid: (value) => (value.trim() ? null : "RFID é obrigatório"),
+    },
+  });
 
-    const handleCheckIn = async () => {
-        setLoading(true);
-        try {
-            const payload = {
-                name: name || null, // Send null if empty
-                phoneNumber: phoneNumber || null, // Send null if empty
-                entryFeePaid: entryFee
-            };
+  const handleSubmit = async (values: typeof form.values) => {
+    setIsLoading(true);
+    setSuccessData(null);
+    try {
+      const response = await fetch("/api/check-in", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(values),
+      });
 
-            const response = await fetch("/api/check-in", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payload),
-            });
+      const data: ApiResponse<CheckInResponse> = await response.json();
 
-            const result: ApiResponse<{ visitId: number; message: string; clientName: string | null }> = await response.json();
+      if (response.ok && data.success && data.data) {
+        notifications.show({
+          title: "Check-in Realizado!",
+          message: `Cliente ${data.data.client.name} entrou com o Tab ${data.data.tab.rfid}`,
+          color: "green",
+          icon: <IconCheck />,
+        });
+        setSuccessData(data.data); // Save success data to show summary
+        form.reset();
+      } else {
+        notifications.show({
+          title: "Erro no Check-in",
+          message: data.error || "Não foi possível realizar o check-in",
+          color: "red",
+        });
+      }
+    } catch (error) {
+      console.error("Check-in error:", error);
+      notifications.show({
+        title: "Erro",
+        message: "Ocorreu um erro de rede inesperado",
+        color: "red",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-            if (response.ok && result.success && result.data) {
-                setWelcomeName(result.data.clientName); // Store the name used/created
-                setCheckedIn(true); // Show success message
-                notifications.show({
-                    title: "Check-in Concluído!",
-                    message: result.data.message,
-                    color: "green",
-                    autoClose: 7000, // Keep message longer
-                });
-                // No redirect needed, user stays on this page until they scan a table QR
-            } else {
-                throw new Error(result.error || "Falha ao realizar check-in.");
-            }
+  const resetForm = () => {
+    setSuccessData(null);
+    form.reset();
+  };
 
-        } catch (error: any) {
-            console.error("Check-in error:", error);
-            notifications.show({
-                title: "Erro no Check-in",
-                message: error.message,
-                color: "red",
-            });
-        } finally {
-            setLoading(false);
-        }
-    };
+  return (
+    <Container size="xs" my={40}>
+      <Title ta="center">Check-in de Cliente</Title>
+      <Text c="dimmed" size="sm" ta="center" mt={5} mb={30}>
+        Associe um cliente a um Tab (RFID) para iniciar uma visita.
+      </Text>
 
-    return (
-        <Container size="xs" style={{ height: "100vh" }}>
-            <Stack justify="center" style={{ height: "100%" }}>
-                <Paper withBorder shadow="md" p="xl" radius="md">
-                    <LoadingOverlay visible={loading} />
-                    <Stack align="center" gap="lg">
-                        <Title order={2} ta="center">Bem-vindo(a) à Acaia!</Title>
+      <Paper withBorder shadow="md" p={30} radius="md">
+        <LoadingOverlay visible={isLoading} />
 
-                        {checkedIn ? (
-                            <>
-                                <Text size="lg" ta="center" c="green">
-                                    Entrada registrada com sucesso{welcomeName ? `, ${welcomeName}` : ''}!
-                                </Text>
-                                <Text ta="center" c="dimmed">
-                                    Por favor, encontre um lugar e escaneie o QR code na sua mesa para acessar o menu e chamar o atendimento.
-                                </Text>
-                                {/* Maybe add a button to go back to a homepage or just let them close the tab */}
-                            </>
-                        ) : (
-                            <>
-                                <Text ta="center">
-                                    Taxa de entrada hoje: <Text component="span" fw={700}>R$ {entryFee.toFixed(2)}</Text>
-                                    {/* Add info about payment method if needed */}
-                                </Text>
-
-                                <Text size="sm" ta="center" c="dimmed">
-                                    (Opcional) Identifique-se para uma experiência personalizada:
-                                </Text>
-                                <TextInput
-                                    label="Seu Nome"
-                                    placeholder="Como gostaria de ser chamado(a)?"
-                                    value={name}
-                                    onChange={(event) => setName(event.currentTarget.value)}
-                                    disabled={loading}
-                                    w="100%"
-                                />
-                                <TextInput
-                                    label="Telefone (WhatsApp)"
-                                    placeholder="(XX) XXXXX-XXXX (Opcional)"
-                                    value={phoneNumber}
-                                    onChange={(event) => setPhoneNumber(event.currentTarget.value)}
-                                    disabled={loading}
-                                    w="100%"
-                                />
-
-                                <Button
-                                    fullWidth
-                                    mt="md"
-                                    color="pastelGreen" // Use theme color
-                                    onClick={handleCheckIn}
-                                    loading={loading}
-                                    size="lg"
-                                >
-                                    Confirmar Entrada
-                                </Button>
-                            </>
-                        )}
-                    </Stack>
-                </Paper>
+        {successData ? (
+          // --- Success View ---
+          <Stack align="center">
+            <IconCheck size={60} color="green" />
+            <Title order={3} ta="center">
+              Check-in Confirmado!
+            </Title>
+            <Text>
+              Cliente: <Text span fw={700}>{successData.client.name}</Text>
+            </Text>
+            <Text>
+              Tab (RFID): <Text span fw={700}>{successData.tab.rfid}</Text>
+            </Text>
+            <Button onClick={resetForm} mt="md">
+              Novo Check-in
+            </Button>
+          </Stack>
+        ) : (
+          // --- Form View ---
+          <form onSubmit={form.onSubmit(handleSubmit)}>
+            <Stack>
+              <TextInput
+                required
+                label="Telefone do Cliente (com DDD)"
+                placeholder="47999887766"
+                {...form.getInputProps("phone")}
+              />
+              <TextInput
+                label="Nome do Cliente (apenas se for novo)"
+                placeholder="Nome completo"
+                {...form.getInputProps("name")}
+              />
+              <TextInput
+                required
+                label="ID do Tab (RFID)"
+                placeholder="Passe o cartão RFID..."
+                {...form.getInputProps("rfid")}
+              />
+              <Button type="submit" mt="lg">
+                Confirmar Check-in
+              </Button>
             </Stack>
-        </Container>
-    );
+          </form>
+        )}
+      </Paper>
+      <Box mt="md">
+        <Anchor component={Link} href="/dashboard/live">
+          <Group gap="xs">
+            <IconArrowLeft size={14} />
+            Voltar ao Dashboard
+          </Group>
+        </Anchor>
+      </Box>
+    </Container>
+  );
 }

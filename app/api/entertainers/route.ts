@@ -1,114 +1,101 @@
-// File: app/api/entertainers/route.ts
+// PATH: app/api/entertainers/route.ts
 import { prisma } from "@/lib/prisma";
-import { getSession } from "@/lib/auth";
 import { ApiResponse } from "@/lib/types";
 import { NextRequest, NextResponse } from "next/server";
-import { Entertainer, Prisma, StaffRole } from "@prisma/client"; // Added StaffRole
+import { Entertainer, EntertainerType } from "@prisma/client"; // Import enum
+import { Decimal } from "@prisma/client/runtime/library";
 
 /**
  * GET /api/entertainers
- * Fetches all entertainers (can filter by active status).
- * Requires staff login.
+ * Fetches all entertainers
  */
 export async function GET(req: NextRequest) {
-    const session = await getSession();
-    if (!session.staff?.isLoggedIn) {
-        return NextResponse.json<ApiResponse>(
-            { success: false, error: "Não autorizado" },
-            { status: 401 }
-        );
-    }
+  try {
+    const entertainers = await prisma.entertainer.findMany({
+      orderBy: {
+        name: "asc",
+      },
+    });
 
-    const { searchParams } = new URL(req.url);
-    const includeInactive = searchParams.get("includeInactive") === "true";
+    // Serialize Decimal fields
+    const serializedEntertainers = entertainers.map((e) => ({
+      ...e,
+      rate: e.rate ? e.rate.toString() : null,
+    }));
 
-    try {
-        const entertainers = await prisma.entertainer.findMany({
-            where: includeInactive ? {} : { isActive: true }, // Filter if not including inactive
-            orderBy: { name: "asc" },
-        });
-
-        return NextResponse.json<ApiResponse<Entertainer[]>>(
-            { success: true, data: entertainers },
-            { status: 200 }
-        );
-    } catch (error) {
-        console.error("GET /api/entertainers error:", error);
-        return NextResponse.json<ApiResponse>(
-            { success: false, error: "Erro ao buscar artistas" },
-            { status: 500 }
-        );
-    }
+    return NextResponse.json<ApiResponse<any[]>>(
+      { success: true, data: serializedEntertainers },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error("Error fetching entertainers:", error);
+    return NextResponse.json<ApiResponse>(
+      { success: false, error: "Erro interno do servidor" },
+      { status: 500 }
+    );
+  }
 }
 
 /**
  * POST /api/entertainers
- * Creates a new entertainer.
- * Requires Admin/Manager role.
+ * Creates a new entertainer
  */
 export async function POST(req: NextRequest) {
-    const session = await getSession();
-    // Stricter role check
-    if (!session.staff?.isLoggedIn || (session.staff.role !== StaffRole.Admin && session.staff.role !== StaffRole.Manager)) {
-        return NextResponse.json<ApiResponse>(
-            { success: false, error: "Não autorizado (Admin/Manager required)" },
-            { status: 403 } // Forbidden
-        );
+  try {
+    const body = await req.json();
+    const { name, type, bio, imageUrl, rate } = body;
+
+    if (!name || !type) {
+      return NextResponse.json<ApiResponse>(
+        { success: false, error: "Nome e Tipo são obrigatórios" },
+        { status: 400 }
+      );
     }
 
-    try {
-        const body = await req.json() as {
-            name: string;
-            type: string;
-            contactNotes?: string | null;
-            // isActive defaults to true in schema
-        };
-
-        const { name, type, contactNotes } = body;
-
-        // --- Validation ---
-        if (!name || name.trim().length < 1) {
-            return NextResponse.json<ApiResponse>({ success: false, error: "Nome do artista é obrigatório." }, { status: 400 });
-        }
-        if (!type || type.trim().length < 1) {
-            return NextResponse.json<ApiResponse>({ success: false, error: "Tipo do artista é obrigatório." }, { status: 400 });
-        }
-        // --- End Validation ---
-
-        const newEntertainer = await prisma.entertainer.create({
-            data: {
-                name: name.trim(),
-                type: type.trim(),
-                contactNotes: contactNotes || null,
-                isActive: true, // Explicitly set default
-            },
-        });
-
-        return NextResponse.json<ApiResponse<Entertainer>>(
-            { success: true, data: newEntertainer },
-            { status: 201 } // 201 Created
-        );
-
-    } catch (error: any) {
-        console.error("POST /api/entertainers error:", error);
-         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-             // --- FIX STARTS HERE ---
-             const target = error.meta?.target;
-             const isNameError = Array.isArray(target) && target.includes('name');
-             // --- FIX ENDS HERE ---
-
-             if (isNameError) {
-                 // Assuming name should be unique based on schema/usage pattern
-                 return NextResponse.json<ApiResponse>(
-                     { success: false, error: "Já existe um artista com este nome." },
-                     { status: 409 } // Conflict
-                 );
-             }
-             // Handle other unique constraints if necessary
-         }
-        return NextResponse.json<ApiResponse>(
-            { success: false, error: "Erro ao criar artista." },
-            { status: 500 }
-        );
+    // Validate EntertainerType
+    if (!Object.values(EntertainerType).includes(type as EntertainerType)) {
+      return NextResponse.json<ApiResponse>(
+        { success: false, error: "Tipo de entertainer inválido" },
+        { status: 400 }
+      );
     }
+
+    let rateDecimal: Decimal | null = null;
+    if (rate) {
+      try {
+        rateDecimal = new Decimal(rate);
+      } catch (e) {
+        return NextResponse.json<ApiResponse>(
+          { success: false, error: "Formato de cachê inválido" },
+          { status: 400 }
+        );
+      }
+    }
+
+    const newEntertainer = await prisma.entertainer.create({
+      data: {
+        name,
+        type: type as EntertainerType,
+        bio: bio || null,
+        imageUrl: imageUrl || null,
+        rate: rateDecimal,
+      },
+    });
+
+    const serializedEntertainer = {
+      ...newEntertainer,
+      rate: newEntertainer.rate ? newEntertainer.rate.toString() : null,
+    };
+
+    return NextResponse.json<ApiResponse<any>>(
+      { success: true, data: serializedEntertainer },
+      { status: 201 }
+    );
+  } catch (error: any) {
+    console.error("Error creating entertainer:", error);
+    return NextResponse.json<ApiResponse>(
+      { success: false, error: "Erro interno do servidor" },
+      { status: 500 }
+    );
+  }
 }

@@ -1,83 +1,204 @@
-// File: app/menu/[token]/components/MenuPageContent.tsx
-"use client"; // This component handles interactions
+// PATH: app/menu/[token]/components/MenuPageContent.tsx
+// Refactored Client Component
 
-import { Container, Title, Text, Paper, Stack, Button, Group } from "@mantine/core";
-import { Product, SeatingArea } from "@prisma/client";
-import { MenuDisplay } from "@/components/MenuDisplay"; // Assuming MenuDisplay is moved to /components
-import { useState } from "react"; // Only client hooks here
+"use client";
+
+import {
+  Container,
+  Title,
+  Text,
+  Paper,
+  Stack,
+  Button,
+  Group,
+  Alert,
+  LoadingOverlay,
+} from "@mantine/core";
+import { Product, Visit } from "@prisma/client"; // Use Prisma types for structure
+import { MenuDisplay } from "@/components/MenuDisplay"; // Shared component
+import { useState, useEffect } from "react";
 import { notifications } from "@mantine/notifications";
-import { Hand } from "lucide-react";
-// Removed Prisma import, use Number() instead
+import { IconBellRinging, IconAlertCircle } from "@tabler/icons-react";
+import { VenueObjectWithWorkstation, SerializedProduct } from "../page"; // Import types from server component
+import { ApiResponse } from "@/lib/types";
+
+// Type for the deserialized Product used within this component
+type DeserializedProduct = Omit<SerializedProduct, "price"> & {
+  price: number; // Price is now a number
+};
+
 
 // Define props the component accepts
 interface MenuPageContentProps {
-    seatingArea: SeatingArea;
-    initialProducts: Product[]; // Receive initial products (prices are strings)
+  venueObject: VenueObjectWithWorkstation;
+  initialProducts: SerializedProduct[]; // Receive serialized products
 }
 
-// Helper to convert string price back to number for client-side use
-function deserializeProducts(products: any[]): Product[] {
-    return products.map(p => ({
-        ...p,
-        // Convert serialized string prices back to numbers
-        costPrice: parseFloat(p.costPrice || '0'),
-        salePrice: parseFloat(p.salePrice || '0'),
-        deductionAmountInSmallestUnit: parseFloat(p.deductionAmountInSmallestUnit || '1'),
-        // Ensure other fields match Product type if necessary
-    }));
+// Helper to deserialize string price back to number
+function deserializeProducts(
+  products: SerializedProduct[]
+): DeserializedProduct[] {
+  return products.map((p) => ({
+    ...p,
+    price: parseFloat(p.price || "0"), // Convert back to number
+  }));
 }
 
+export function MenuPageContent({
+  venueObject,
+  initialProducts,
+}: MenuPageContentProps) {
+  const [products] = useState<DeserializedProduct[]>(
+    deserializeProducts(initialProducts)
+  );
+  const [loadingCall, setLoadingCall] = useState(false);
+  const [loadingAssociation, setLoadingAssociation] = useState(true); // For visit association
+  const [associationError, setAssociationError] = useState<string | null>(null);
+  const [activeVisitId, setActiveVisitId] = useState<string | null>(null);
 
-export function MenuPageContent({ seatingArea, initialProducts }: MenuPageContentProps) {
-    // Deserialize products received as props (strings -> numbers)
-    const [products, setProducts] = useState<Product[]>(deserializeProducts(initialProducts));
-    const [loadingCall, setLoadingCall] = useState(false);
+  // --- Visit Association Logic ---
+  useEffect(() => {
+    const associateVisit = async () => {
+      setLoadingAssociation(true);
+      setAssociationError(null);
+      try {
+        // !!! CRITICAL ASSUMPTION !!!
+        // We assume the tabId (RFID string) is stored in localStorage
+        // after a successful check-in on the check-in page.
+        const tabId = localStorage.getItem("activeTabId");
 
-    const handleCallServer = () => {
-        setLoadingCall(true);
-        // Simulate API call or notification system
-        setTimeout(() => {
-            notifications.show({
-                title: "Atendimento Chamado",
-                message: `Um atendente foi notificado para ir até ${seatingArea.name}.`,
-                color: "green",
-                autoClose: 5000,
-            });
-            setLoadingCall(false);
-        }, 750); // Simulate network delay
+        if (!tabId) {
+          throw new Error(
+            "Nenhum Tab ativo encontrado. Por favor, realize o check-in primeiro."
+          );
+        }
+
+        const response = await fetch("/api/visits/associate", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tabId: tabId, qrCodeId: venueObject.qrCodeId }),
+        });
+
+        const data: ApiResponse<Visit> = await response.json();
+
+        if (!response.ok || !data.success || !data.data) {
+          throw new Error(
+            data.error || "Falha ao associar sua visita a esta mesa."
+          );
+        }
+
+        // Successfully associated
+        setActiveVisitId(data.data.id);
+        notifications.show({
+            title: "Localização Registrada",
+            message: `Sua visita foi associada a ${venueObject.name}.`,
+            color: 'teal'
+        })
+
+      } catch (error: any) {
+        console.error("Visit association error:", error);
+        setAssociationError(error.message);
+        notifications.show({
+            title: "Erro de Associação",
+            message: error.message + " Você pode ver o menu, mas Chamar Garçom não funcionará.",
+            color: 'red',
+            autoClose: 7000,
+        })
+      } finally {
+        setLoadingAssociation(false);
+      }
     };
 
-    // --- Render ---
-    return (
-        <Container size="md" py="xl">
-            <Stack gap="xl">
-                {/* Header Section */}
-                <Paper p="lg" radius="md" withBorder>
-                    <Title order={1} ta="center">Acaia Menu</Title>
-                    <Text ta="center" c="dimmed" mt="xs">
-                        Você está em: <Text component="span" fw={700}>{seatingArea.name}</Text>
-                    </Text>
-                    {/* Call Server Button */}
-                    <Group justify="center" mt="lg">
-                        <Button
-                            leftSection={<Hand size={18} />}
-                            onClick={handleCallServer}
-                            loading={loadingCall}
-                            variant="light"
-                            // Updated color to theme color
-                            color="pastelGreen"
-                            size="md"
-                        >
-                            Chamar Garçom
-                        </Button>
-                    </Group>
-                </Paper>
+    associateVisit();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [venueObject.qrCodeId]); // Rerun if QR code changes (though unlikely)
 
-                {/* Pass products with number prices to MenuDisplay */}
-                {/* Ensure MenuDisplay can handle 'number' for prices */}
-                <MenuDisplay products={products} />
+  // --- Call Server Logic ---
+  const handleCallServer = async () => {
+    if (!activeVisitId || loadingAssociation || associationError) {
+        notifications.show({
+            title: "Ação Indisponível",
+            message: associationError || "Associação da visita ainda pendente ou falhou.",
+            color: "orange"
+        });
+        return;
+    }
 
-            </Stack>
-        </Container>
-    );
+    setLoadingCall(true);
+    try {
+        const response = await fetch("/api/server-calls", {
+            method: "POST",
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ qrCodeId: venueObject.qrCodeId }) // Send QR Code ID
+        });
+
+        const data: ApiResponse = await response.json();
+
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || "Falha ao chamar o garçom.");
+        }
+
+        notifications.show({
+            title: "Garçom Chamado",
+            message: `Um atendente foi notificado para ir até ${venueObject.name}. Aguarde.`,
+            color: "green",
+            autoClose: 7000,
+        });
+
+    } catch (error: any) {
+         notifications.show({
+            title: "Erro",
+            message: error.message,
+            color: "red",
+        });
+    } finally {
+        setLoadingCall(false);
+    }
+  };
+
+  // --- Render ---
+  return (
+    <Container size="md" py="xl">
+        <LoadingOverlay visible={loadingAssociation} />
+      <Stack gap="xl">
+        {/* Header Section */}
+        <Paper p="lg" radius="md" withBorder>
+          <Title order={1} ta="center">
+            Acaia Menu
+          </Title>
+          <Text ta="center" c="dimmed" mt="xs">
+            Você está em:{" "}
+            <Text component="span" fw={700}>
+              {venueObject.name}
+            </Text>
+          </Text>
+
+           {/* Show error if association failed */}
+           {associationError && !loadingAssociation && (
+               <Alert title="Erro de Associação" color="red" icon={<IconAlertCircle />} mt="md" radius="md">
+                   {associationError} Não será possível chamar o garçom. Tente recarregar a página ou verificar seu check-in.
+               </Alert>
+           )}
+
+          {/* Call Server Button */}
+          <Group justify="center" mt="lg">
+            <Button
+              leftSection={<IconBellRinging size={18} />}
+              onClick={handleCallServer}
+              loading={loadingCall}
+              variant="light"
+              color="blue" // Keep distinct color
+              size="md"
+              disabled={loadingAssociation || !!associationError} // Disable if loading or error
+            >
+              Chamar Garçom
+            </Button>
+          </Group>
+        </Paper>
+
+        {/* Pass deserialized products (number prices) to MenuDisplay */}
+        <MenuDisplay products={products} />
+      </Stack>
+    </Container>
+  );
 }

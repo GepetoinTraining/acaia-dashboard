@@ -1,8 +1,4 @@
 // PATH: app/dashboard/floorplan/components/VenueObjectEditor.tsx
-// NOTE: This is a NEW FILE.
-// This is a simple list-based editor. A visual drag-and-drop editor
-// (using Konva, react-grid-layout, etc.) would replace this component.
-
 "use client";
 
 import { useState, useEffect } from "react";
@@ -15,7 +11,12 @@ import {
   ActionIcon,
   Tooltip,
 } from "@mantine/core";
-import { IconPlus, IconPencil, IconTrash, IconQrCode } from "@tabler/icons-react";
+import {
+  IconPlus,
+  IconPencil,
+  IconTrash,
+  IconQrcode, // CORRECTED: Was IconQrCode
+} from "@tabler/icons-react";
 import {
   VenueObjectType,
   Workstation,
@@ -71,39 +72,39 @@ export function VenueObjectEditor({
   useEffect(() => {
     fetchWorkstations();
   }, []);
-  
+
   const handleDelete = async (objectId: string) => {
     if (!confirm("Tem certeza que deseja remover este objeto?")) return;
-    
+
     try {
       const res = await fetch("/api/venue-objects", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: objectId }),
       });
-      
+
       const data: ApiResponse = await res.json();
-      
+
       if (data.success) {
         notifications.show({
           title: "Sucesso",
           message: "Objeto removido.",
-          color: "green"
+          color: "green",
         });
         onRefresh(); // Refresh the object list
       } else {
-         notifications.show({
+        notifications.show({
           title: "Erro",
           message: data.error || "Falha ao remover objeto.",
-          color: "red"
+          color: "red",
         });
       }
     } catch (error) {
-       notifications.show({
-          title: "Erro",
-          message: "Erro inesperado.",
-          color: "red"
-        });
+      notifications.show({
+        title: "Erro",
+        message: "Erro inesperado.",
+        color: "red",
+      });
     }
   };
 
@@ -116,9 +117,10 @@ export function VenueObjectEditor({
       <Table.Td>{obj.workstation?.name || "N/A"}</Table.Td>
       <Table.Td>
         <Tooltip label="Ver QR Code (em breve)">
-           <ActionIcon variant="transparent" color="gray">
-              <IconQrCode size={18} />
-           </ActionIcon>
+          <ActionIcon variant="transparent" color="gray">
+            {/* CORRECTED: Was IconQrCode */}
+            <IconQrcode size={18} />
+          </ActionIcon>
         </Tooltip>
         <Tooltip label="Editar (em breve)">
           <ActionIcon variant="transparent" color="blue">
@@ -126,7 +128,11 @@ export function VenueObjectEditor({
           </ActionIcon>
         </Tooltip>
         <Tooltip label="Remover">
-          <ActionIcon variant="transparent" color="red" onClick={() => handleDelete(obj.id)}>
+          <ActionIcon
+            variant="transparent"
+            color="red"
+            onClick={() => handleDelete(obj.id)}
+          >
             <IconTrash size={18} />
           </ActionIcon>
         </Tooltip>
@@ -146,7 +152,7 @@ export function VenueObjectEditor({
           Novo Objeto
         </Button>
       </Group>
-      
+
       <Text c="dimmed" size="xs" mb="md">
         NOTA: Este é um editor em lista. A funcionalidade de arrastar e soltar
         será implementada futuramente.

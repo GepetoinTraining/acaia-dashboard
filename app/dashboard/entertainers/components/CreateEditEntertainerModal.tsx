@@ -1,151 +1,149 @@
-// File: app/dashboard/entertainers/components/CreateEditEntertainerModal.tsx
+// PATH: app/dashboard/entertainers/components/CreateEditEntertainerModal.tsx
 "use client";
 
+import { useState } from "react";
 import {
-    Modal,
-    TextInput,
-    Button,
-    Stack,
-    LoadingOverlay,
-    Textarea,
-    Switch
+  Modal,
+  TextInput,
+  Textarea,
+  Button,
+  Select,
+  NumberInput,
+  Stack,
+  LoadingOverlay,
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
-import { Entertainer, Prisma } from "@prisma/client"; // Import types
-import { useState, useEffect } from "react";
-import { ApiResponse } from "@/lib/types"; // Adjust path if needed
 import { notifications } from "@mantine/notifications";
-import { User, Music, FileText } from 'lucide-react'; // Icons
+import { EntertainerType } from "@prisma/client"; // Import enum
+import { ApiResponse } from "@/lib/types";
 
-type CreateEditEntertainerModalProps = {
-    opened: boolean;
-    onClose: () => void;
-    onSuccess: () => void;
-    entertainerToEdit?: Entertainer | null;
-};
+interface CreateEditEntertainerModalProps {
+  opened: boolean;
+  onClose: () => void;
+  onSuccess: () => void;
+  // entertainer?: Entertainer; // Add this for editing later
+}
+
+// Data for the EntertainerType select input
+const typeData = [
+  { value: EntertainerType.DJ, label: "DJ" },
+  { value: EntertainerType.BAND, label: "Banda" },
+];
 
 export function CreateEditEntertainerModal({
-    opened,
-    onClose,
-    onSuccess,
-    entertainerToEdit,
+  opened,
+  onClose,
+  onSuccess,
 }: CreateEditEntertainerModalProps) {
-    const [loading, setLoading] = useState(false);
-    const isEditMode = Boolean(entertainerToEdit);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  // const isEditing = !!entertainer; // Add this for editing later
 
-    const form = useForm({
-        initialValues: {
-            name: "",
-            type: "", // e.g., "DJ", "Band", "Solo Musician"
-            contactNotes: "",
-            isActive: true,
-        },
-        validate: {
-            name: (val) => (val.trim().length < 1 ? "Nome é obrigatório" : null),
-            type: (val) => (val.trim().length < 1 ? "Tipo é obrigatório" : null),
-        },
-    });
+  const form = useForm({
+    initialValues: {
+      name: "",
+      type: EntertainerType.DJ,
+      bio: "",
+      imageUrl: "",
+      rate: 0,
+    },
+    validate: {
+      name: (value) =>
+        value.trim().length < 2 ? "Nome é obrigatório" : null,
+      type: (value) => (value ? null : "Tipo é obrigatório"),
+    },
+  });
 
-    // Populate form if editing
-    useEffect(() => {
-        if (entertainerToEdit && opened) {
-            form.setValues({
-                name: entertainerToEdit.name,
-                type: entertainerToEdit.type,
-                contactNotes: entertainerToEdit.contactNotes || "",
-                isActive: entertainerToEdit.isActive,
-            });
-        } else if (!opened) {
-            form.reset(); // Reset form when modal closes or opens for creation
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [entertainerToEdit, opened]);
+  const handleSubmit = async (values: typeof form.values) => {
+    setIsSubmitting(true);
+    try {
+      // TODO: Add PUT method for editing
+      const response = await fetch("/api/entertainers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...values,
+          rate: values.rate > 0 ? values.rate.toString() : null,
+        }),
+      });
 
-    const handleSubmit = async (values: typeof form.values) => {
-        setLoading(true);
-        try {
-            const payload = {
-                ...values,
-                contactNotes: values.contactNotes || null, // Ensure null is sent if empty
-            };
+      const data: ApiResponse = await response.json();
 
-            const url = isEditMode ? `/api/entertainers/${entertainerToEdit?.id}` : "/api/entertainers";
-            const method = isEditMode ? "PATCH" : "POST";
+      if (response.ok && data.success) {
+        notifications.show({
+          title: "Sucesso",
+          message: "Artista salvo com sucesso!",
+          color: "green",
+        });
+        form.reset();
+        onSuccess();
+      } else {
+        notifications.show({
+          title: "Erro",
+          message: data.error || "Falha ao salvar artista",
+          color: "red",
+        });
+      }
+    } catch (error) {
+      console.error("Submit error:", error);
+      notifications.show({
+        title: "Erro",
+        message: "Ocorreu um erro inesperado",
+        color: "red",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
-            const response = await fetch(url, {
-                method: method,
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payload),
-            });
+  const handleClose = () => {
+    form.reset();
+    onClose();
+  };
 
-            const result: ApiResponse<Entertainer> = await response.json();
-            if (!response.ok) {
-                throw new Error(result.error || `Falha ao ${isEditMode ? 'atualizar' : 'criar'} artista`);
-            }
-
-            notifications.show({
-                title: "Sucesso!",
-                message: `Artista "${values.name}" ${isEditMode ? 'atualizado' : 'criado'} com sucesso.`,
-                color: "green",
-            });
-            onSuccess(); // Closes modal and refreshes data in parent
-        } catch (error: any) {
-            notifications.show({
-                title: "Erro",
-                message: error.message,
-                color: "red",
-            });
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    return (
-        <Modal
-            opened={opened}
-            onClose={onClose}
-            title={isEditMode ? "Editar Artista" : "Adicionar Novo Artista"}
-            centered
-        >
-            <LoadingOverlay visible={loading} />
-            <form onSubmit={form.onSubmit(handleSubmit)}>
-                <Stack>
-                    <TextInput
-                        required
-                        label="Nome do Artista / Banda"
-                        placeholder="Ex: DJ Exemplo, Banda Tal"
-                        leftSection={<User size={16} />}
-                        {...form.getInputProps("name")}
-                    />
-                    <TextInput
-                        required
-                        label="Tipo"
-                        placeholder="Ex: DJ, Banda, Músico Solo"
-                        leftSection={<Music size={16} />}
-                        {...form.getInputProps("type")}
-                    />
-                    <Textarea
-                        label="Notas de Contato / Observações"
-                        placeholder="Ex: Telefone, redes sociais, estilo musical, etc."
-                        leftSection={<FileText size={16} />}
-                        autosize
-                        minRows={3}
-                        {...form.getInputProps("contactNotes")}
-                    />
-                    {isEditMode && (
-                        <Switch
-                            mt="md"
-                            label="Artista está ativo?"
-                            description="Artistas inativos não aparecem para seleção."
-                            {...form.getInputProps('isActive', { type: 'checkbox' })}
-                        />
-                    )}
-
-                    <Button type="submit" mt="md" color="pastelGreen" loading={loading}>
-                        {isEditMode ? "Salvar Alterações" : "Criar Artista"}
-                    </Button>
-                </Stack>
-            </form>
-        </Modal>
-    );
+  return (
+    <Modal
+      opened={opened}
+      onClose={handleClose}
+      title={"Novo Artista"} // Change to "Editar Artista" when editing
+    >
+      <LoadingOverlay visible={isSubmitting} />
+      <form onSubmit={form.onSubmit(handleSubmit)}>
+        <Stack>
+          <TextInput
+            required
+            label="Nome"
+            placeholder="Nome artístico"
+            {...form.getInputProps("name")}
+          />
+          <Select
+            required
+            label="Tipo"
+            data={typeData}
+            {...form.getInputProps("type")}
+          />
+          <Textarea
+            label="Bio (Opcional)"
+            placeholder="Breve descrição"
+            {...form.getInputProps("bio")}
+          />
+          <TextInput
+            label="URL da Imagem (Opcional)"
+            placeholder="https://"
+            {...form.getInputProps("imageUrl")}
+          />
+          <NumberInput
+            label="Cachê (R$) (Opcional)"
+            placeholder="150.00"
+            decimalScale={2}
+            fixedDecimalScale
+            min={0}
+            {...form.getInputProps("rate")}
+          />
+          <Button type="submit" mt="md">
+            Salvar
+          </Button>
+        </Stack>
+      </form>
+    </Modal>
+  );
 }

@@ -68,6 +68,12 @@ export default function CheckInPage() {
           icon: <IconCheck />,
         });
         setSuccessData(data.data); // Save success data to show summary
+
+        // --- ADDED THIS LINE ---
+        // Store the active tab's RFID in localStorage for the menu page
+        localStorage.setItem("activeTabId", data.data.tab.rfid);
+        // -----------------------
+
         form.reset();
       } else {
         notifications.show({

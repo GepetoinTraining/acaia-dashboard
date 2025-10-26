@@ -4,7 +4,8 @@
 import { NavLink, Stack, Button, Text, Skeleton } from "@mantine/core";
 import {
     LayoutDashboard, Users, Martini, Archive, Calculator,
-    UserPlus, Briefcase, LineChart, LogOut, Armchair, Music, Disc, Package, ToolsKitchen3 // Added ToolsKitchen3 icon
+    UserPlus, Briefcase, LineChart, LogOut, Armchair, Music, Disc, Package,
+    CookingPot // Changed from ToolsKitchen3
 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import React, { useState, useEffect } from "react";
@@ -18,7 +19,9 @@ const links = [
     { icon: Armchair, label: "Planta & Mesas", href: "/dashboard/floorplan" },
     { icon: Martini, label: "Produtos & Receitas", href: "/dashboard/products" },
     { icon: Package, label: "Ingredientes", href: "/dashboard/ingredients"},
-    { icon: ToolsKitchen3, label: "Receitas de Preparo", href: "/dashboard/prep-recipes"}, // <-- ADDED THIS LINE
+    // --- Use the corrected icon ---
+    { icon: CookingPot, label: "Receitas de Preparo", href: "/dashboard/prep-recipes"}, // <-- CORRECTED ICON
+    // --- End correction ---
     { icon: Archive, label: "Estoque", href: "/dashboard/stock" },
     { icon: Music, label: "Artistas & Eventos", href: "/dashboard/entertainers" },
     { icon: Disc, label: "Vinil & DJ Sets", href: "/dashboard/vinyl" },
@@ -27,7 +30,6 @@ const links = [
     { icon: LineChart, label: "Relatórios", href: "/dashboard/reports" },
 ];
 
-// ... (rest of the MainNav component remains the same) ...
 
 // Helper function to fetch session (client-side)
 async function getClientSession(): Promise<StaffSession | null> {

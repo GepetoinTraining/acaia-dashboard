@@ -22,9 +22,9 @@ export async function GET(req: NextRequest) {
         name: true,
         unit: true,
         costPerUnit: true,
-        isPrepared: true, // Include isPrepared flag
-        createdAt: true,
-        updatedAt: true,
+        isPrepared: true, // Include isPrepared flag, prisma client will map to boolean
+        // REMOVED: createdAt: true,
+        // REMOVED: updatedAt: true,
       },
       orderBy: {
         name: "asc",

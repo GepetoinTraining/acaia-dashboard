@@ -14,7 +14,9 @@ import {
 import { DateInput } from "@mantine/dates";
 import 'dayjs/locale/pt-br'; // Import locale for DateInput
 import { useForm } from "@mantine/form";
-import { useState } from "react";
+// ---- START FIX ----
+import { useState, useEffect } from "react"; // Import useEffect
+// ---- END FIX ----
 import { ApiResponse } from "@/lib/types";
 import { notifications } from "@mantine/notifications";
 import { SerializedIngredientDef } from "../../ingredients/page"; // Use definition type
@@ -51,8 +53,10 @@ export function AddStockHoldingModal({
     },
   });
 
+  // ---- START FIX ----
   // Reset form when modal opens or ingredient changes
-  useState(() => {
+  // Use useEffect instead of useState here
+  useEffect(() => {
      if (!opened) {
          form.reset();
      } else {
@@ -60,7 +64,8 @@ export function AddStockHoldingModal({
         // form.setFieldValue('venueObjectId', null);
      }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [opened, ingredient]);
+  }, [opened, ingredient]); // Dependency array is correct for useEffect
+  // ---- END FIX ----
 
 
   const handleSubmit = async (values: typeof form.values) => {

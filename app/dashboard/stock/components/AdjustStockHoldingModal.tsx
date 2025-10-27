@@ -12,7 +12,9 @@ import {
   SegmentedControl,
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
-import { useState } from "react";
+// ---- START FIX ----
+import { useState, useEffect } from "react"; // Import useEffect
+// ---- END FIX ----
 import { ApiResponse, SerializedStockHolding } from "@/lib/types";
 import { notifications } from "@mantine/notifications";
 import { format } from "date-fns";
@@ -54,9 +56,10 @@ export function AdjustStockHoldingModal({
     },
   });
 
+   // ---- START FIX ----
    // Reset form when holding changes or modal opens/closes
-   // Important to use useEffect here
-   useState(() => {
+   // Use useEffect instead of useState here
+   useEffect(() => {
         if (opened) {
             form.setValues({ value: parseFloat(holding.quantity) });
             setAction('SET'); // Default to SET when opening
@@ -64,7 +67,8 @@ export function AdjustStockHoldingModal({
              form.reset();
         }
    // eslint-disable-next-line react-hooks/exhaustive-deps
-   }, [holding, opened]);
+   }, [holding, opened]); // Dependency array is correct for useEffect
+   // ---- END FIX ----
 
   const handleSubmit = async (values: typeof form.values) => {
     setLoading(true);

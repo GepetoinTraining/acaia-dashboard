@@ -4,10 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma db push && next build",
+    "build": "prisma generate && prisma db push && npx prisma db seed && next build", // <-- Modified line
     "start": "next start",
     "lint": "next lint",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate" // Keep this as well
   },
   "dependencies": {
     "@emotion/react": "^11.11.4",
@@ -37,7 +37,7 @@
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
     "@types/jsonwebtoken": "^9.0.6",
-    "@types/node": "^20",
+    "@types/node": "^20.19.23",
     "@types/qrcode": "^1.5.5",
     "@types/react": "^18",
     "@types/react-dom": "^18",
@@ -47,6 +47,7 @@
     "postcss-preset-mantine": "^1.15.0",
     "postcss-simple-vars": "^7.0.1",
     "prisma": "^5.16.2",
-    "typescript": "^5"
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
   }
 }

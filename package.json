@@ -49,5 +49,8 @@
     "prisma": "^5.16.2",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"
+  },
+  "prisma": { // Keep the prisma block for local seeding too
+    "seed": "node --loader ts-node/esm prisma/seed.ts"
   }
 }

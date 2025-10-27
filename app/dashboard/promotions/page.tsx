@@ -1,14 +1,12 @@
-// File: app/dashboard/promotions/page.tsx
+// PATH: app/dashboard/promotions/page.tsx
 "use client";
 
 import { useState, useEffect } from "react";
 import { Stack, Group, Button, LoadingOverlay, Text } from "@mantine/core";
-import { PageHeader } from "../components/PageHeader";
+import { PageHeader } from "../components/PageHeader"; // Correct path
 import { Plus } from "lucide-react";
 import { useDisclosure } from "@mantine/hooks";
 import { ApiResponse, Product } from "@/lib/types"; // Use client-side Product
-// ---- START FIX ----
-// Moved these imports to the top level
 import { notifications } from "@mantine/notifications";
 import { CreatePromotionModal } from "./components/CreatePromotionModal";
 import { PromotionTable } from "./components/PromotionTable";
@@ -39,7 +37,6 @@ type Promotion = {
 export type PromotionWithProduct = Promotion & {
     product: Product | null; // Use client-side Product type
 };
-// --- END FIX ---
 
 
 export default function PromotionsPage() {
@@ -118,6 +115,15 @@ export default function PromotionsPage() {
     // fetchData();
   };
 
+  // ---- START FIX ----
+  // Define the action button element
+  const createPromotionButton = (
+    <Button leftSection={<Plus size={18} />} onClick={openCreateModal}>
+        Criar Promoção
+    </Button>
+  );
+  // ---- END FIX ----
+
   return (
     <>
       <CreatePromotionModal
@@ -127,11 +133,10 @@ export default function PromotionsPage() {
         onPromotionCreated={handlePromotionCreated}
       />
       <Stack>
-        <PageHeader title="Promoções">
-          <Button leftSection={<Plus size={18} />} onClick={openCreateModal}>
-            Criar Promoção
-          </Button>
-        </PageHeader>
+        {/* ---- START FIX ---- */}
+        {/* Pass the button via the actionButton prop */}
+        <PageHeader title="Promoções" actionButton={createPromotionButton} />
+        {/* ---- END FIX ---- */}
 
          {/* Display general API error if occurred during fetch */}
          {apiError && !loading && (

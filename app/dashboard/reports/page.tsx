@@ -1,5 +1,5 @@
 // PATH: app/dashboard/reports/page.tsx
-// NOTE: This is a NEW FILE in a NEW FOLDER.
+// NOTE: Corrected onChange handler for DatePickerInput
 
 "use client";
 
@@ -10,7 +10,10 @@ import {
   QueryClientProvider,
   useQuery,
 } from "@tanstack/react-query";
-import { DatePickerInput } from "@mantine/dates";
+// ---- START FIX ----
+// Import DatesRangeValue type
+import { DatePickerInput, DatesRangeValue } from "@mantine/dates";
+// ---- END FIX ----
 import { useState } from "react";
 import { IconAlertCircle } from "@tabler/icons-react";
 import "dayjs/locale/pt-br"; // Import pt-br locale for dates
@@ -66,6 +69,18 @@ function ReportsPage() {
       enabled: !!startDate && !!endDate,
     });
 
+  // ---- START FIX ----
+  // Define the handler function separately to convert string dates to Date objects
+  const handleDateChange = (value: DatesRangeValue) => {
+    const [start, end] = value;
+    setDateRange([
+        start ? new Date(start) : null,
+        end ? new Date(end) : null
+    ]);
+  };
+  // ---- END FIX ----
+
+
   return (
     <Container fluid>
       <Stack gap="lg">
@@ -86,7 +101,10 @@ function ReportsPage() {
             label="Selecione o Período"
             placeholder="DD/MM/YYYY - DD/MM/YYYY"
             value={dateRange}
-            onChange={setDateRange}
+            // ---- START FIX ----
+            // Use the new handler function
+            onChange={handleDateChange}
+            // ---- END FIX ----
             locale="pt-br"
             clearable
           />

@@ -4,10 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && prisma db push && npx prisma db seed && next build", // <-- Modified line
+    "build": "prisma generate && prisma db push && npx prisma db seed && next build", // Comment REMOVED
     "start": "next start",
     "lint": "next lint",
-    "postinstall": "prisma generate" // Keep this as well
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@emotion/react": "^11.11.4",
@@ -47,10 +47,10 @@
     "postcss-preset-mantine": "^1.15.0",
     "postcss-simple-vars": "^7.0.1",
     "prisma": "^5.16.2",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.9.3"
+    "ts-node": "^10.9.2", // Make sure this is installed
+    "typescript": "^5.9.3" // Make sure this is installed
   },
-  "prisma": { // Keep the prisma block for local seeding too
+  "prisma": {
     "seed": "node --loader ts-node/esm prisma/seed.ts"
   }
 }

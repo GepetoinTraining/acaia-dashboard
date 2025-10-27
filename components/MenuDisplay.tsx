@@ -1,5 +1,5 @@
 // PATH: components/MenuDisplay.tsx
-// Adjusted to expect serialized product data
+// Adjusted to expect deserialized product data
 
 "use client";
 
@@ -17,12 +17,21 @@ import {
 } from "@mantine/core";
 import { IconToolsKitchen2, IconGlassFull } from "@tabler/icons-react"; // Use Tabler icons
 import React from "react";
-import { SerializedProduct } from "@/app/menu/[token]/page"; // Import serialized type
+// ---- START FIX ----
+// Import SerializedProduct AND define DeserializedProduct locally or import if defined elsewhere
+import { SerializedProduct } from "@/app/menu/[token]/page"; // Keep if needed for other parts, or remove
 
-// Define the props the component accepts
+// Define the type with number price that this component actually uses
+type DeserializedProduct = Omit<SerializedProduct, "price"> & {
+  price: number;
+};
+
+
+// Define the props the component accepts using the DeserializedProduct type
 interface MenuDisplayProps {
-  products: SerializedProduct[]; // Expect products with STRING prices
+  products: DeserializedProduct[]; // Expect products with NUMBER prices
 }
+// ---- END FIX ----
 
 export function MenuDisplay({ products }: MenuDisplayProps) {
   // Separate products into food and drink for display
@@ -33,7 +42,7 @@ export function MenuDisplay({ products }: MenuDisplayProps) {
 
   // Helper to render a list of products
   const renderProductList = (
-    items: SerializedProduct[], // Expect serialized type here
+    items: DeserializedProduct[], // Expect deserialized type here
     title: string,
     icon: React.ReactNode
   ) => (
@@ -72,8 +81,8 @@ export function MenuDisplay({ products }: MenuDisplayProps) {
                   size="lg"
                   style={{ flexShrink: 0 }}
                 >
-                  {/* Price is a STRING, parse before formatting */}
-                  {formatCurrency(parseFloat(product.price || "0"))}
+                  {/* Price is already a NUMBER, no need for parseFloat */}
+                  {formatCurrency(product.price || 0)}
                 </Badge>
               </Group>
             </Paper>

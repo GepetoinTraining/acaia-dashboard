@@ -27,7 +27,7 @@ export type SessionData = IronSession<SessionDataBase>;
 // Configure the session
 export const sessionOptions: SessionOptions = {
   password: process.env.AUTH_SECRET as string, // Must set in .env.local
-  cookieName: "privacyclub_session",
+  cookieName: "acaiaclub_session",
   cookieOptions: {
     secure: process.env.NODE_ENV === "production", // Use environment variable for secure flag
     httpOnly: true,

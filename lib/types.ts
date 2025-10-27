@@ -1,6 +1,9 @@
 // File: lib/types.ts
 import {
-    Client, Partner, Product as PrismaProduct, User, StaffCommission, Visit ,
+    // ---- START FIX ----
+    // Removed Partner and StaffCommission as they are not in schema.prisma
+    Client, /* Partner, */ Product as PrismaProduct, User, /* StaffCommission, */ Visit ,
+    // ---- END FIX ----
     SeatingArea, Entertainer, VinylRecord, Prisma, ClientStatus,
     ProductType, Workstation, Ingredient, StockHolding as PrismaStockHolding, VenueObject, Order, OrderItem, // Added OrderItem
     // Add new Prisma types
@@ -170,7 +173,13 @@ export type LiveData = {
 };
 
 // --- FINANCIALS ---
-// StaffCommission doesn't exist, remove related types if not needed elsewhere
+// ---- START FIX ----
+// StaffCommission doesn't exist, remove related types
+// export type StaffCommissionWithDetails = StaffCommission & {
+//     staff: User;
+//     visit: Visit & { client: Client };
+// };
+// ---- END FIX ----
 
 // --- REPORTS ---
 // Update leaderboards to use string IDs

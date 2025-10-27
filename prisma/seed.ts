@@ -1,5 +1,10 @@
+// PATH: prisma/seed.ts
 import { PrismaClient, Role } from '@prisma/client';
-import * as bcrypt from 'bcrypt';
+// ---- START FIX ----
+// import * as bcrypt from 'bcrypt'; // Old import
+import * as bcrypt from 'bcryptjs'; // Correct import
+// ---- END FIX ----
+
 
 const prisma = new PrismaClient();
 
@@ -37,7 +42,7 @@ async function main() {
   // --- 2. Create Default Owner ---
   // Hashes the default PIN '123456'
   const defaultPin = '123456';
-  const hashedPin = await bcrypt.hash(defaultPin, 10);
+  const hashedPin = await bcrypt.hash(defaultPin, 10); // bcryptjs hash function
 
   await prisma.user.upsert({
     where: { email: 'owner@venue.com' },

@@ -11,13 +11,33 @@ import { IngredientTable } from "./components/IngredientTable"; // Updated path
 import { CreateIngredientModal } from "./components/CreateIngredientModal"; // Updated path
 import { ApiResponse } from "@/lib/types";
 import { notifications } from "@mantine/notifications";
+// ---- START FIX ----
+// Import QueryClient and Provider
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+
+// Create a client (can be outside the component)
+const queryClient = new QueryClient();
+// ---- END FIX ----
 
 // Type from API (cost is string)
 export type SerializedIngredientDef = Omit<Ingredient, "costPerUnit"> & {
   costPerUnit: string;
 };
 
-export default function IngredientsPage() {
+
+// ---- START FIX ----
+// Create a Wrapper Component
+export default function IngredientsPageWrapper() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <IngredientsPage />
+    </QueryClientProvider>
+  );
+}
+
+// Rename the original component
+function IngredientsPage() {
+// ---- END FIX ----
   const [ingredients, setIngredients] = useState<SerializedIngredientDef[]>([]);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -88,4 +108,4 @@ export default function IngredientsPage() {
       {/* UpdateStockModal component removed */}
     </Container>
   );
-}
+} // Close the renamed IngredientsPage component

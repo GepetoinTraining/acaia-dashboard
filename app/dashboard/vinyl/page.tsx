@@ -4,7 +4,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Button, Container, Stack, Group, Tabs } from "@mantine/core";
+import { Button, Container, Stack, Group, Tabs, Text } from "@mantine/core";
 import { IconPlus, IconAlbum, IconBuildingWarehouse } from "@tabler/icons-react";
 import { VinylLibrarySlot, VinylRecord } from "@prisma/client";
 import { PageHeader } from "../components/PageHeader";

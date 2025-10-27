@@ -1,17 +1,18 @@
 // File: lib/types.ts
 import {
-    // ---- START FIX ----
-    // Removed Partner and StaffCommission as they are not in schema.prisma
     Client, /* Partner, */ Product as PrismaProduct, User, /* StaffCommission, */ Visit ,
+    // ---- START FIX ----
+    // Removed SeatingArea import
+    /* SeatingArea, */ Entertainer, VinylRecord, Prisma, /* ClientStatus */
     // ---- END FIX ----
-    SeatingArea, Entertainer, VinylRecord, Prisma, ClientStatus,
     ProductType, Workstation, Ingredient, StockHolding as PrismaStockHolding, VenueObject, Order, OrderItem, // Added OrderItem
     // Add new Prisma types
     PrepRecipe as PrismaPrepRecipe,
     PrepRecipeInput as PrismaPrepRecipeInput,
     PrepTask as PrismaPrepTask,
     Role, // Ensure Role is imported if used directly (e.g., in StaffSession)
-    ClientWallet // Added ClientWallet
+    ClientWallet, // Added ClientWallet
+    WalletTransaction // Added WalletTransaction here for ClientWalletStringBalance
 } from "@prisma/client";
 
 // --- Client-side Product type with string prices ---
@@ -155,15 +156,18 @@ export type LiveClient = {
     // Add other relevant fields if needed, e.g., checkInTime
 };
 
+// ---- START FIX ----
 // Type representing VenueObject with active visit info for live map/table
+// Use VenueObject and make reservationCost a string to match API serialization
 export type SeatingAreaWithVisitInfo = Omit<VenueObject, 'reservationCost'> & {
-    reservationCost: number | null; // Use number after serialization in API
+    reservationCost: string | null; // Use string after serialization in API
     visits: ({ // Info about the active visit in this area
         id: string;
         clientId: string;
         client: { name: string } | null; // Include client name
     })[];
 };
+// ---- END FIX ----
 
 export type LiveData = {
     clients: LiveClient[];
@@ -173,13 +177,8 @@ export type LiveData = {
 };
 
 // --- FINANCIALS ---
-// ---- START FIX ----
 // StaffCommission doesn't exist, remove related types
-// export type StaffCommissionWithDetails = StaffCommission & {
-//     staff: User;
-//     visit: Visit & { client: Client };
-// };
-// ---- END FIX ----
+// export type StaffCommissionWithDetails = StaffCommission & { ... };
 
 // --- REPORTS ---
 // Update leaderboards to use string IDs
@@ -199,7 +198,7 @@ export type ReportData = {
 };
 
 // Add WalletTransaction if needed (ensure amount is string)
-import { WalletTransaction } from "@prisma/client";
+// Moved WalletTransaction import to the top with other Prisma types
 export type SerializedWalletTransaction = Omit<WalletTransaction, 'amount'> & {
     amount: string;
 };

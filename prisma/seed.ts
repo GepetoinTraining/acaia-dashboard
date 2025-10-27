@@ -1,6 +1,6 @@
 // PATH: prisma/seed.ts
 import { PrismaClient, Role } from '@prisma/client';
-import * as bcrypt from 'bcryptjs';
+import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 

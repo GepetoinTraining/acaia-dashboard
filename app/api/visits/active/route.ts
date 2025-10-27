@@ -1,11 +1,12 @@
 // PATH: app/api/visits/active/route.ts
-// NOTE: This is a NEW FILE.
-// This route is used by the POS to find active visits by Tab (RFID) or Client name.
-
 import { prisma } from "@/lib/prisma";
 import { ApiResponse } from "@/lib/types";
 import { NextRequest, NextResponse } from "next/server";
 import { Visit, Client, Tab } from "@prisma/client";
+
+// ---- ADD THIS LINE ----
+export const dynamic = 'force-dynamic'; // Ensures the route is always treated as dynamic
+// -----------------------
 
 // Define the response type, which includes related models
 export type ActiveVisitResponse = Visit & {
@@ -20,7 +21,7 @@ export type ActiveVisitResponse = Visit & {
  */
 export async function GET(req: NextRequest) {
   try {
-    const { searchParams } = new URL(req.url);
+    const { searchParams } = new URL(req.url); // This usage makes the route dynamic
     const query = searchParams.get("query");
 
     const visits = await prisma.visit.findMany({

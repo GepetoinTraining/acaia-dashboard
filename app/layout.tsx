@@ -8,7 +8,7 @@ import { MantineProvider } from "./components/MantineProvider";
 import { Notifications } from "@mantine/notifications"; // Import Notifications
 
 export const metadata = {
-  // title: "Privacy Club - Dashboard", // Changed title for Acaia
+  // title: "Acaia - Dashboard", // Changed title for Acaia
   title: "Acaia",
   description: "Acaia Menu & Dashboard", // Updated description
 };
